@@ -1,0 +1,18 @@
+{
+  "name": "clawd-strike",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A CS-inspired team deathmatch FPS starring the Claude mascot, set in a small British town.",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "three": "0.185.1"
+  },
+  "devDependencies": {
+    "vite": "7.3.7"
+  }
+}
