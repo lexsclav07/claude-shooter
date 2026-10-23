@@ -38,6 +38,9 @@ export function createMaterials() {
     soil: { map: T.noiseTexture([92, 70, 50], { speck: 9000, speckAlpha: 0.3, seed: 131 }), tile: [2, 2] },
     water: { map: T.noiseTexture([70, 96, 100], { speck: 1000, speckAlpha: 0.08, seed: 137 }), tile: [3, 3] },
   };
+  // the endless ground plane is pushed back in depth so roads and paths drawn just
+  // above it never flicker, even seen from a jet at altitude
+  defs.ground = { map: defs.grass.map, tile: [4, 4], pushBack: true };
   const out = {};
   for (const [name, d] of Object.entries(defs)) {
     const m = new THREE.MeshLambertMaterial({
@@ -49,6 +52,11 @@ export function createMaterials() {
       m.polygonOffset = true;
       m.polygonOffsetFactor = -2;
       m.polygonOffsetUnits = -2;
+    }
+    if (d.pushBack) {
+      m.polygonOffset = true;
+      m.polygonOffsetFactor = 4;
+      m.polygonOffsetUnits = 16;
     }
     m.name = name;
     out[name] = { material: m, tile: d.tile };

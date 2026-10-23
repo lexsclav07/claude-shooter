@@ -6,6 +6,7 @@
 import * as THREE from 'three';
 
 const ROT_THETA = [0, -Math.PI / 2, Math.PI, Math.PI / 2];
+const CHUNK = 128;
 // Where each local face ends up after a quarter-turn rotation.
 const FACE_MAP = [
   { px: 'px', nx: 'nx', pz: 'pz', nz: 'nz' },
@@ -156,16 +157,69 @@ export class WorldBuilder {
     this.footprints = [];
     this.grassRects = [];
     this.lights = [];
+    this.groups = [];
+    this.meshes = new Map();
   }
 
-  batch(name) {
-    let b = this.batches.get(name);
+  // Geometry is batched per material *and* per 64 m chunk of the map, so the renderer
+  // (and the shadow pass) can skip chunks that are out of view.
+  batch(name, x = 0, z = 0) {
+    const key = `${name}|${Math.floor(x / CHUNK)},${Math.floor(z / CHUNK)}`;
+    let b = this.batches.get(key);
     if (!b) {
       if (!this.mats[name]) throw new Error(`Unknown material ${name}`);
       b = new Batch();
-      this.batches.set(name, b);
+      b.mat = name;
+      b.key = key;
+      this.batches.set(key, b);
     }
     return b;
+  }
+
+  // Everything built inside fn becomes one destructible prop: explosions (and tanks,
+  // if crushable) can knock it down, and it is rebuilt for the next match.
+  //   opts: hp, crush (tanks flatten it), bullet (bullets damage it), explode {radius, damage, vehicle},
+  //         debris ('wood' | 'foliage' | 'metal' | 'stone'), wreck {h, tint} (flattened remains)
+  destructible(opts, fn) {
+    const before = new Map();
+    for (const [k, b] of this.batches) before.set(k, b.count);
+    const boxStart = this.world.boxes.length;
+    fn();
+    const ranges = [];
+    for (const [k, b] of this.batches) {
+      const s0 = before.get(k) ?? 0;
+      if (b.count > s0) ranges.push({ key: k, start: s0, count: b.count - s0, geometry: null, orig: null });
+    }
+    const boxes = this.world.boxes.slice(boxStart);
+    if (!boxes.length) return null;
+    const min = [Infinity, Infinity, Infinity];
+    const max = [-Infinity, -Infinity, -Infinity];
+    for (const b of boxes) {
+      for (let i = 0; i < 3; i++) {
+        min[i] = Math.min(min[i], b.min[i]);
+        max[i] = Math.max(max[i], b.max[i]);
+      }
+    }
+    const g = {
+      id: this.groups.length,
+      hp: opts.hp ?? 100,
+      maxHp: opts.hp ?? 100,
+      crush: opts.crush !== false,
+      bullet: !!opts.bullet,
+      explode: opts.explode || null,
+      debris: opts.debris || 'wood',
+      wreck: opts.wreck || null,
+      ranges,
+      boxes,
+      specs: boxes.map((b) => ({ min: b.min.slice(), max: b.max.slice(), kind: b.kind, pane: b.pane || null })),
+      min,
+      max,
+      center: [(min[0] + max[0]) / 2, (min[1] + max[1]) / 2, (min[2] + max[2]) / 2],
+      destroyed: false,
+    };
+    for (const b of boxes) b.group = g;
+    this.groups.push(g);
+    return g;
   }
 
   withFrame(frame, fn) {
@@ -226,7 +280,7 @@ export class WorldBuilder {
       (p[0] * q.uh[0] + p[1] * q.uh[1] + p[2] * q.uh[2]) / tile[0] + ou,
       (p[0] * q.vh[0] + p[1] * q.vh[1] + p[2] * q.vh[2]) / tile[1] + ov,
     ];
-    return this.batch(mat).quad([p0, p1, p2, p3], q.n, [uvOf(p0), uvOf(p1), uvOf(p2), uvOf(p3)], color);
+    return this.batch(mat, (wb[0] + wb[3]) / 2, (wb[2] + wb[5]) / 2).quad([p0, p1, p2, p3], q.n, [uvOf(p0), uvOf(p1), uvOf(p2), uvOf(p3)], color);
   }
 
   // Arbitrary quad given in local coordinates (counter-clockwise seen from the front).
@@ -239,10 +293,12 @@ export class WorldBuilder {
     });
     const n = normalOf(w[0], w[1], w[2]);
     const uv = opts.uv || autoUV(w, n, this.mats[mat].tile);
-    this.batch(mat).quad(w, n, uv, toColor(opts.tint));
+    const cx = (w[0][0] + w[2][0]) / 2;
+    const cz = (w[0][2] + w[2][2]) / 2;
+    this.batch(mat, cx, cz).quad(w, n, uv, toColor(opts.tint));
     if (opts.doubleSided) {
       const r = [w[3], w[2], w[1], w[0]];
-      this.batch(mat).quad(r, [-n[0], -n[1], -n[2]], [uv[3], uv[2], uv[1], uv[0]], toColor(opts.tint));
+      this.batch(mat, cx, cz).quad(r, [-n[0], -n[1], -n[2]], [uv[3], uv[2], uv[1], uv[0]], toColor(opts.tint));
     }
   }
 
@@ -254,7 +310,7 @@ export class WorldBuilder {
     });
     const n = normalOf(w[0], w[1], w[2]);
     const uv = opts.uv || autoUV(w, n, this.mats[mat].tile);
-    this.batch(mat).tri(w, n, uv, toColor(opts.tint));
+    this.batch(mat, w[0][0], w[0][2]).tri(w, n, uv, toColor(opts.tint));
   }
 
   // Vertical cylinder (optionally capped) in local coordinates.
@@ -264,7 +320,7 @@ export class WorldBuilder {
     const [wx, wz] = f.toWorld(cx, cz);
     const y = y0 + f.oy;
     const tile = this.mats[mat].tile;
-    const b = this.batch(mat);
+    const b = this.batch(mat, wx, wz);
     const c = toColor(opts.tint);
     const r1 = opts.rTop ?? r;
     for (let i = 0; i < seg; i++) {
@@ -307,7 +363,7 @@ export class WorldBuilder {
     const nm = new THREE.Matrix3().getNormalMatrix(m);
     const v = new THREE.Vector3();
     const n = new THREE.Vector3();
-    const b = this.batch(mat);
+    const b = this.batch(mat, wx, wz);
     const c = toColor(opts.tint);
     const uvScale = opts.uvScale ?? 1;
     for (let i = 0; i < pos.count; i += 3) {
@@ -339,11 +395,11 @@ export class WorldBuilder {
     const sx = wb[3] - wb[0];
     const sz = wb[5] - wb[2];
     const faces = sx < sz ? ['px', 'nx'] : ['pz', 'nz'];
-    const b = this.batch('glass');
+    const b = this.batch('glass', (wb[0] + wb[3]) / 2, (wb[2] + wb[5]) / 2);
     const start = b.count;
     for (const f of faces) this._faceQuad('glass', f, wb, WHITE);
     const box = this.world.add(wb[0], wb[1], wb[2], wb[3], wb[4], wb[5], 'glass');
-    const pane = { box, start, count: b.count - start, geometry: null, broken: false };
+    const pane = { box, key: b.key, start, count: b.count - start, geometry: null, broken: false };
     box.pane = pane;
     this.panes.push(pane);
     return pane;
@@ -407,28 +463,52 @@ export class WorldBuilder {
   }
 
   finish(scene, { shadows = true } = {}) {
-    for (const [name, b] of this.batches) {
+    for (const [key, b] of this.batches) {
       if (b.count === 0) continue;
+      const name = b.mat;
       const geo = b.geometry();
       const mesh = new THREE.Mesh(geo, this.mats[name].material);
-      mesh.name = `batch:${name}`;
+      mesh.name = `batch:${key}`;
       mesh.matrixAutoUpdate = false;
       mesh.updateMatrix();
+      this.meshes.set(key, mesh);
       if (name === 'glass') {
         mesh.renderOrder = 2;
-        const pos = geo.attributes.position.array;
-        for (const p of this.panes) {
-          p.geometry = geo;
-          p.orig = pos.slice(p.start * 3, (p.start + p.count) * 3);
-        }
       } else if (shadows) {
-        mesh.castShadow = !name.startsWith('line') && name !== 'grass' && name !== 'tarmac' && name !== 'paving' && name !== 'water';
+        mesh.castShadow = !name.startsWith('line') && name !== 'grass' && name !== 'ground' && name !== 'tarmac' && name !== 'paving' && name !== 'water';
         mesh.receiveShadow = true;
       }
       this.group.add(mesh);
     }
+    for (const p of this.panes) {
+      p.geometry = this.meshes.get(p.key).geometry;
+      p.orig = p.geometry.attributes.position.array.slice(p.start * 3, (p.start + p.count) * 3);
+    }
+    for (const g of this.groups) {
+      for (const r of g.ranges) {
+        r.geometry = this.meshes.get(r.key).geometry;
+        r.orig = r.geometry.attributes.position.array.slice(r.start * 3, (r.start + r.count) * 3);
+      }
+    }
     scene.add(this.group);
     return this.group;
+  }
+}
+
+// Hide / restore a destructible group's geometry.
+export function hideGroup(g) {
+  for (const r of g.ranges) {
+    const pos = r.geometry.attributes.position;
+    for (let i = r.start; i < r.start + r.count; i++) pos.setXYZ(i, 0, -1000, 0);
+    pos.needsUpdate = true;
+  }
+}
+
+export function showGroup(g) {
+  for (const r of g.ranges) {
+    const pos = r.geometry.attributes.position;
+    pos.array.set(r.orig, r.start * 3);
+    pos.needsUpdate = true;
   }
 }
 

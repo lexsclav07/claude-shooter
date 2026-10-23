@@ -220,6 +220,125 @@ export const WEAPONS = {
   },
 };
 
+// ---------------------------------------------------------------- class gadgets
+
+WEAPONS.nlaw = {
+  id: 'nlaw',
+  name: 'NLAW',
+  slot: 'gadget',
+  cls: 'launcher',
+  projectile: 'rocket',
+  damage: 0,
+  head: 1,
+  legs: 1,
+  rpm: 30,
+  auto: false,
+  mag: 1,
+  reserve: 3,
+  reload: 2.6,
+  draw: 0.9,
+  range: 1,
+  pen: 0,
+  spread: { base: 0.5, move: 3, air: 6, perShot: 0, max: 0, recover: 5, crouch: 0.8, ads: 0.25 },
+  recoil: { up: 3.5, side: 0.5, climb: 1, recover: 5 },
+  speed: 0.86,
+  zoom: 1.7,
+  adsTime: 0.35,
+  sound: 'rocketLaunch',
+  model: 'nlaw',
+  desc: 'Anti-tank rocket. Hit tanks from the rear for extra damage.',
+};
+
+WEAPONS.c4 = {
+  id: 'c4',
+  name: 'C4',
+  slot: 'gadget',
+  cls: 'c4',
+  throwable: 'c4',
+  damage: 0,
+  head: 1,
+  legs: 1,
+  rpm: 70,
+  auto: false,
+  mag: 1,
+  reserve: 2,
+  reload: 0.7,
+  draw: 0.5,
+  range: 1,
+  pen: 0,
+  spread: { base: 0, move: 0, air: 0, perShot: 0, max: 0, recover: 1, crouch: 1, ads: 1 },
+  recoil: { up: 0, side: 0, climb: 1, recover: 10 },
+  speed: 1,
+  zoom: 1,
+  adsTime: 0.1,
+  sound: null,
+  model: 'c4',
+  desc: 'Throw sticky charges with fire, detonate them all with aim.',
+};
+
+WEAPONS.mine = {
+  id: 'mine',
+  name: 'AT Mine',
+  slot: 'gadget2',
+  cls: 'mine',
+  placeable: true,
+  damage: 0,
+  head: 1,
+  legs: 1,
+  rpm: 40,
+  auto: false,
+  mag: 1,
+  reserve: 1,
+  reload: 0.9,
+  draw: 0.6,
+  range: 1,
+  pen: 0,
+  spread: { base: 0, move: 0, air: 0, perShot: 0, max: 0, recover: 1, crouch: 1, ads: 1 },
+  recoil: { up: 0, side: 0, climb: 1, recover: 10 },
+  speed: 1,
+  zoom: 1,
+  adsTime: 0.1,
+  sound: null,
+  model: 'mine',
+  desc: 'Drop on a road. Blows up enemy tanks that drive over it.',
+};
+
+// Vehicle weapons (fired by tanks and jets; listed here for names and damage).
+WEAPONS.tankmg = {
+  id: 'tankmg',
+  name: 'Coax MG',
+  damage: 22,
+  head: 2.2,
+  legs: 0.8,
+  range: 0.99,
+  pen: 0.8,
+  armor: { tank: 0.05, jet: 0.45 },
+};
+WEAPONS.jetcannon = {
+  id: 'jetcannon',
+  name: 'Typhoon Cannon',
+  damage: 28,
+  head: 1.5,
+  legs: 1,
+  range: 0.997,
+  pen: 1.2,
+  armor: { tank: 0.22, jet: 0.85 },
+};
+
+export const VEHICLE_KILL_NAMES = {
+  shell: 'Challenger 2',
+  rocket: 'NLAW',
+  jetRocket: 'Typhoon Rockets',
+  bomb: 'Typhoon Bomb',
+  roadkill: 'Run Over',
+  crash: 'Crash',
+  frag: 'Grenade',
+  c4: 'C4',
+  mine: 'AT Mine',
+  explosion: 'Explosion',
+  vehicle: 'Vehicle Explosion',
+};
+
 export const PRIMARIES = ['ak47', 'l85', 'mp5', 'shotgun', 'l96'];
 export const SECONDARIES = ['hipower', 'webley'];
 

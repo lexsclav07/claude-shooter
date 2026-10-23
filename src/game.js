@@ -17,6 +17,7 @@ import { Actor } from './actors/actor.js';
 import { BotBrain, randomLoadout } from './actors/bot.js';
 import { PlayerController } from './actors/player.js';
 import { Hud } from './ui/hud.js';
+import { Destruction } from './world/destruction.js';
 import { WEAPONS } from './weapons/defs.js';
 import { BOT_NAMES, MAX_HEALTH, RESPAWN_TIME, SPAWN_PROTECT, PHYS } from './config.js';
 import { damp } from './util.js';
@@ -38,9 +39,9 @@ export class Game {
 
     const scene = new THREE.Scene();
     this.scene = scene;
-    scene.fog = new THREE.Fog(0xc9d1d9, 70, 340);
+    scene.fog = new THREE.Fog(0xc9d1d9, 110, 900);
     this.sky = new THREE.Mesh(
-      new THREE.SphereGeometry(700, 32, 16),
+      new THREE.SphereGeometry(1800, 32, 16),
       new THREE.MeshBasicMaterial({ map: skyTexture(), side: THREE.BackSide, fog: false, depthWrite: false }),
     );
     this.sky.renderOrder = -1;
@@ -54,24 +55,37 @@ export class Game {
     sun.castShadow = true;
     sun.shadow.bias = -0.0004;
     sun.shadow.normalBias = 0.04;
-    Object.assign(sun.shadow.camera, { left: -78, right: 78, top: 78, bottom: -78, near: 10, far: 220 });
+    // the shadow camera follows the view (see render) so shadows stay crisp on a big map
+    Object.assign(sun.shadow.camera, { left: -85, right: 85, top: 85, bottom: -85, near: 10, far: 400 });
+    this.sunOffset = new THREE.Vector3(-90, 160, 70);
     scene.add(sun);
     this.sun = sun;
     this.applyShadowQuality();
 
-    this.camera = new THREE.PerspectiveCamera(70, 1, 0.06, 1500);
+    this.camera = new THREE.PerspectiveCamera(70, 1, 0.06, 4000);
     this.camera.rotation.order = 'YXZ';
     scene.add(this.camera);
 
     // world
     const t0 = performance.now();
-    this.world = new CollisionWorld();
+    this.world = new CollisionWorld(-260, -210, 260, 210, 2);
     this.builder = new WorldBuilder(this.world, createMaterials());
     this.map = buildTown(this.builder);
     this.builder.finish(scene);
+    this.destruction = new Destruction(this);
     this.nav = new NavGraph(this.world, this.map.bounds);
     const seeds = [...this.map.spawns[0], ...this.map.spawns[1]].map((s) => s.pos);
-    this.navStats = this.nav.build(this.builder, seeds);
+    // 1 m nav grid in town and inside every countryside building, 3 m elsewhere
+    const T = this.map.town;
+    const fine = [T];
+    for (const f of this.builder.footprints) {
+      if (f.type !== 'building' && f.type !== 'church') continue;
+      if (f.x0 > T.minX && f.x1 < T.maxX && f.z0 > T.minZ && f.z1 < T.maxZ) continue;
+      if (Math.abs(f.x0) > 210 || Math.abs(f.z0) > 160) continue;
+      const r = { minX: f.x0 - 3, maxX: f.x1 + 3, minZ: f.z0 - 3, maxZ: f.z1 + 3 };
+      if (!fine.some((o) => r.minX < o.maxX && r.maxX > o.minX && r.minZ < o.maxZ && r.maxZ > o.minZ)) fine.push(r);
+    }
+    this.navStats = this.nav.build(this.builder, seeds, fine);
     this.loadMs = Math.round(performance.now() - t0);
     this.glassBackup = null;
 
@@ -194,7 +208,7 @@ export class Game {
     player.model.root.visible = false;
     for (const a of this.actors) this.respawn(a, true);
     this.pickups.reset();
-    this.restoreGlass();
+    this.destruction.reset();
     this.playerCtl.reset();
     this.state = 'playing';
     this.hud.onMatchStart();
@@ -213,26 +227,6 @@ export class Game {
     this.intel = [new Map(), new Map()];
     this.match = null;
     this.slowmo = 1;
-  }
-
-  // Put every broken window back for a fresh match.
-  restoreGlass() {
-    for (const p of this.builder.panes) {
-      if (!p.broken) continue;
-      const pos = p.geometry.attributes.position;
-      for (let i = 0; i < p.count; i++) {
-        const k = (p.start + i) * 3;
-        pos.array[k] = p.orig[i * 3];
-        pos.array[k + 1] = p.orig[i * 3 + 1];
-        pos.array[k + 2] = p.orig[i * 3 + 2];
-      }
-      pos.needsUpdate = true;
-      p.broken = false;
-      const b = p.box;
-      const nb = this.world.add(b.min[0], b.min[1], b.min[2], b.max[0], b.max[1], b.max[2], 'glass');
-      nb.pane = p;
-      p.box = nb;
-    }
   }
 
   // Debug/testing: let a bot drive the player too.
@@ -599,7 +593,7 @@ export class Game {
     if (this.state === 'menu' || !p) {
       // slow fly-over of the town behind the menu
       const t = this.menuT * 0.05;
-      cam.position.set(Math.cos(t) * 62, 26 + Math.sin(t * 0.7) * 4, Math.sin(t) * 46);
+      cam.position.set(Math.cos(t) * 75, 30 + Math.sin(t * 0.7) * 5, Math.sin(t) * 58);
       cam.lookAt(0, 2, 0);
       if (cam.fov !== 60) {
         cam.fov = 60;
@@ -626,8 +620,25 @@ export class Game {
       cam.quaternion.slerp(q, damp(3, dt));
       cam.rotation.order = 'YXZ';
     }
+    // debug/testing: fixed camera override
+    if (this.debugCam) {
+      cam.position.set(...this.debugCam.pos);
+      cam.lookAt(...this.debugCam.look);
+      if (this.debugCam.fov && cam.fov !== this.debugCam.fov) {
+        cam.fov = this.debugCam.fov;
+        cam.updateProjectionMatrix();
+      }
+    }
     this.sky.position.copy(cam.position);
-    // keep the shadow camera centred near the action for crisper shadows
+    // keep the shadow camera centred near the action for crisper shadows (snapped to
+    // whole shadow-map texels so shadows don't shimmer as you move)
+    const focus = tmp.copy(cam.position);
+    if (focus.y > 60) focus.y = 0;
+    const step = 170 / this.sun.shadow.mapSize.x;
+    focus.x = Math.round(focus.x / step) * step;
+    focus.z = Math.round(focus.z / step) * step;
+    this.sun.target.position.set(focus.x, 0, focus.z);
+    this.sun.position.set(focus.x, 0, focus.z).add(this.sunOffset);
     for (const a of this.actors) a.model.update(dt * (this.state === 'playing' ? this.slowmo : 1), a);
     this.audio.setListener(cam.position, p && p.alive ? p.yaw : Math.atan2(-cam.getWorldDirection(tmp).x, -tmp.z));
 

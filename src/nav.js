@@ -163,19 +163,19 @@ export class NavGraph {
     return out;
   }
 
-  build(builder, seeds) {
-    const t0 = performance.now();
-    const { minX, maxX, minZ, maxZ } = this.bounds;
-    const S = 1.0;
-    const nx = Math.floor((maxX - minX) / S);
-    const nz = Math.floor((maxZ - minZ) / S);
+  // Builds a grid of walkable points over rect b at spacing S (skipping points that
+  // fall inside any rect in `exclude`) and links neighbouring points.
+  _grid(b, S, exclude) {
+    const nx = Math.floor((b.maxX - b.minX) / S);
+    const nz = Math.floor((b.maxZ - b.minZ) / S);
     const cols = new Array(nx * nz);
+    const inside = (x, z, r) => x > r.minX && x < r.maxX && z > r.minZ && z < r.maxZ;
     for (let i = 0; i < nx; i++) {
       for (let j = 0; j < nz; j++) {
-        const x = minX + (i + 0.5) * S;
-        const z = minZ + (j + 0.5) * S;
+        const x = b.minX + (i + 0.5) * S;
+        const z = b.minZ + (j + 0.5) * S;
         const ids = [];
-        for (const t of this._surfaces(x, z)) ids.push(this._addNode(x, t, z));
+        if (!exclude.some((r) => inside(x, z, r))) for (const t of this._surfaces(x, z)) ids.push(this._addNode(x, t, z));
         cols[i * nz + j] = ids;
       }
     }
@@ -192,15 +192,37 @@ export class NavGraph {
             const ii = i + di;
             const jj = j + dj;
             if (ii < 0 || jj < 0 || ii >= nx || jj >= nz) continue;
-            for (const b of cols[ii * nz + jj]) {
-              if (Math.abs(this.y[a] - this.y[b]) > 1.2) continue;
-              if (this.walk(this.x[a], this.y[a], this.z[a], this.x[b], this.y[b], this.z[b])) this._link(a, b);
+            for (const c of cols[ii * nz + jj]) {
+              if (Math.abs(this.y[a] - this.y[c]) > 1.2 * (S > 1.5 ? 0.5 : 1)) continue;
+              if (this.walk(this.x[a], this.y[a], this.z[a], this.x[c], this.y[c], this.z[c])) this._link(a, c);
             }
           }
         }
       }
     }
+  }
+
+  // fineRects: areas that need a 1 m grid (the town, and every building out in the
+  // countryside); everything else in bounds gets a coarser 3 m grid.
+  build(builder, seeds, fineRects = [this.bounds]) {
+    const t0 = performance.now();
+    const fineDone = [];
+    for (const r of fineRects) {
+      this._grid(r, 1.0, fineDone);
+      fineDone.push(r);
+    }
+    const fineCount = this.x.length;
+    this._grid(this.bounds, 3.0, fineRects);
     const gridCount = this.x.length;
+    // stitch the coarse grid onto the fine areas
+    this._hash();
+    const near = [];
+    for (let c = fineCount; c < gridCount; c++) {
+      for (const n of this.near(this.x[c], this.z[c], 3.4, near)) {
+        if (n >= fineCount || Math.abs(this.y[n] - this.y[c]) > 0.5) continue;
+        if (this.walk(this.x[c], this.y[c], this.z[c], this.x[n], this.y[n], this.z[n])) this._link(c, n);
+      }
+    }
 
     // Extra nodes: doorways and stairs.
     const extra = [];
@@ -234,7 +256,12 @@ export class NavGraph {
     this.badChains = 0;
     for (const chain of builder.navLinks) {
       const ids = chain.map(snap);
-      for (let k = 0; k < ids.length - 1; k++) if (!chainLink(ids[k], ids[k + 1])) this.badChains++;
+      for (let k = 0; k < ids.length - 1; k++) {
+        if (!chainLink(ids[k], ids[k + 1])) {
+          this.badChains++;
+          (this.badList ||= []).push(['chain', k, chain[k].map((v) => +v.toFixed(2))]);
+        }
+      }
     }
     this._hash();
     const tmp = [];

@@ -13,8 +13,11 @@ import { Frame } from './builder.js';
 import { terraceHouse, shop, pub, bungalow, hall, church, building, furn, table } from './buildings.js';
 import * as P from './props.js';
 import { mulberry32 } from '../util.js';
+import { buildCountryside, MAP_BOUNDS, TOWN_BOUNDS } from './countryside.js';
 
-export const BOUNDS = { minX: -62, maxX: 62, minZ: -46, maxZ: 46 };
+export const BOUNDS = MAP_BOUNDS;
+export const TOWN = TOWN_BOUNDS;
+const TOWN_EDGE = { minX: -62, maxX: 62, minZ: -46, maxZ: 46 };
 
 export function buildTown(B) {
   const zones = [];
@@ -32,7 +35,9 @@ export function buildTown(B) {
 
   westSpawn(B, zone);
   eastSpawn(B, zone);
-  boundary(B);
+  B.withFrame(new Frame(0, 0, 0), () => townHedge(B));
+  B.withFrame(new Frame(0, 0, 2), () => townHedge(B));
+  buildCountryside(B, zone);
   backdrop(B);
 
   const pickups = [
@@ -49,6 +54,19 @@ export function buildTown(B) {
     { type: 'ammo', pos: [-23, 0, -40] },
     { type: 'ammo', pos: [23, 0, 40] },
   ];
+  // countryside pickups, mirrored for the other half
+  for (const [type, x, y, z] of [
+    ['health', -108.4, 0.15, -107], // farmhouse
+    ['health', 53, 0.15, -121], // fuel station kiosk
+    ['health', 100.5, 0.15, -11.5], // country pub
+    ['ammo', 3, 0.05, -67], // pillbox
+    ['ammo', -80, 0.05, -136], // barn
+    ['ammo', -165, 0.05, -20], // depot hangar
+    ['health', -180, 0.05, -20], // depot hangar
+  ]) {
+    pickups.push({ type, pos: [x, y, z] });
+    pickups.push({ type, pos: [-x, y, -z] });
+  }
 
   const spawns = [[], []];
   // face each spawn towards the nearest way into town (high street or a back lane)
@@ -62,16 +80,22 @@ export function buildTown(B) {
     spawns[1].push({ pos: [-x, 0, -z], yaw: yaw + Math.PI });
   }
 
-  return { zones, pickups, spawns, bounds: BOUNDS };
+  // vehicles start at each team's depot; jets start already airborne
+  const vehicleSpawns = [
+    { tank: [{ pos: [-168, 0, -5], yaw: -Math.PI / 2 }, { pos: [-168, 0, 5], yaw: -Math.PI / 2 }], jet: [{ pos: [-330, 150, -25], yaw: -Math.PI / 2 }, { pos: [-330, 165, 25], yaw: -Math.PI / 2 }] },
+    { tank: [{ pos: [168, 0, 5], yaw: Math.PI / 2 }, { pos: [168, 0, -5], yaw: Math.PI / 2 }], jet: [{ pos: [330, 150, 25], yaw: Math.PI / 2 }, { pos: [330, 165, -25], yaw: Math.PI / 2 }] },
+  ];
+
+  return { zones, pickups, spawns, vehicleSpawns, bounds: BOUNDS, town: TOWN, hills: B.hills || [] };
 }
 
 // ---------------------------------------------------------------- ground & roads
 
 function ground(B) {
-  // collision ground for the whole playable area
-  B.box(-80, -1, -70, 80, 0, 70, null, { render: false, kind: 'ground' });
+  // collision ground for the whole playable area (and well beyond, for low-flying jets)
+  B.box(-1000, -1, -1000, 1000, 0, 1000, null, { render: false, kind: 'ground' });
   // visual ground plane stretching out to the horizon (slightly sunk to avoid z-fighting)
-  B.quad([[-400, -0.015, 400], [400, -0.015, 400], [400, -0.015, -400], [-400, -0.015, -400]], 'grass', { tint: 0xe8f0d8 });
+  B.quad([[-1600, -0.015, 1600], [1600, -0.015, 1600], [1600, -0.015, -1600], [-1600, -0.015, -1600]], 'ground', { tint: 0xe8f0d8 });
 }
 
 function flat(B, x0, z0, x1, z1, mat, y = 0.006, tint) {
@@ -85,7 +109,7 @@ function pavement(B, x0, z0, x1, z1, kerbSide) {
 }
 
 function highStreet(B, zone) {
-  flat(B, -120, -3.5, 120, 3.5, 'tarmac', 0.004);
+  flat(B, -63, -3.5, 63, 3.5, 'tarmac', 0.004);
   // pavements with gaps at the side-road mouths
   pavement(B, -48, -6, -26, -3.5, 'pz');
   pavement(B, -20, -6, 48, -3.5, 'pz');
@@ -289,7 +313,7 @@ function townSide(B, cfg, zone) {
   zone('Ginnel', 22, -26, 24, -6);
 
   // side road
-  flat(B, -26, -60, -20, -3.5, 'tarmac', 0.005);
+  flat(B, -26, -47, -20, -3.5, 'tarmac', 0.005);
   for (let z = -44; z < -8; z += 5) flat(B, -23.06, z, -22.94, z + 2.5, 'lineWhite', 0.012);
   zone(cfg.lane, -26, -46, -20, -6);
   // back lane
@@ -673,61 +697,64 @@ function eastSpawn(B, zone) {
 
 // ---------------------------------------------------------------- boundary & horizon
 
-function boundary(B) {
-  const { minX, maxX, minZ, maxZ } = BOUNDS;
-  // tall hedges around everything, broken only where the roads leave town
-  P.hedge(B, minX - 0.8, minZ - 0.8, maxX + 0.8, minZ, 3.2);
-  P.hedge(B, minX - 0.8, maxZ, maxX + 0.8, maxZ + 0.8, 3.2);
-  P.hedge(B, minX - 0.8, minZ, minX, -3.5, 3.2);
-  P.hedge(B, minX - 0.8, 3.5, minX, maxZ, 3.2);
-  P.hedge(B, maxX, minZ, maxX + 0.8, -3.5, 3.2);
-  P.hedge(B, maxX, 3.5, maxX + 0.8, maxZ, 3.2);
-  // road closed barriers
-  for (const s of [-1, 1]) {
-    const x = s * (maxX + 0.4);
-    for (let z = -3.2; z < 3.3; z += 1.6) {
-      B.box(x - 0.1, 0.25, z, x + 0.1, 0.95, z + 1.4, 'paint', { tint: 0xd82020, kind: 'metal' });
-      B.box(x - 0.11, 0.5, z + 0.3, x + 0.11, 0.7, z + 1.1, 'white', { collide: false });
+// Tall hedge round the town, with gaps wide enough for tanks where roads and
+// field gateways lead out into the countryside. Authored for the west and north
+// edges; the rotated copy does the east and south.
+function townHedge(B) {
+  const { minX, maxX, minZ, maxZ } = TOWN_EDGE;
+  const run = (x0, z0, x1, z1, gaps) => {
+    const alongX = x1 - x0 > z1 - z0;
+    let s0 = alongX ? x0 : z0;
+    const end = alongX ? x1 : z1;
+    for (const [g0, g1] of gaps) {
+      if (g0 > s0) alongX ? P.hedge(B, s0, z0, g0, z1, 3.2) : P.hedge(B, x0, s0, x1, g0, 3.2);
+      s0 = g1;
     }
-  }
-  P.clip(B, minX - 1, minZ - 5, minX - 0.5, maxZ + 5);
-  P.clip(B, maxX + 0.5, minZ - 5, maxX + 1, maxZ + 5);
-  P.clip(B, minX - 5, minZ - 1, maxX + 5, minZ - 0.5);
-  P.clip(B, minX - 5, maxZ + 0.5, maxX + 5, maxZ + 1);
+    if (s0 < end) alongX ? P.hedge(B, s0, z0, end, z1, 3.2) : P.hedge(B, x0, s0, x1, end, 3.2);
+  };
+  run(minX - 0.8, minZ - 0.8, maxX + 0.8, minZ, [[-58, -50], [-28, -18], [50, 58]]);
+  run(minX - 0.8, minZ, minX, maxZ, [[-40, -32], [-7, 7], [32, 40]]);
 }
 
 function backdrop(B) {
   const rnd = mulberry32(99);
   // rolling hills
-  for (let i = 0; i < 26; i++) {
-    const a = (i / 26) * Math.PI * 2 + rnd() * 0.2;
-    const d = 230 + rnd() * 90;
+  B.hills = [];
+  for (let i = 0; i < 30; i++) {
+    const a = (i / 30) * Math.PI * 2 + rnd() * 0.2;
+    const d = 560 + rnd() * 160;
     const g = new THREE.SphereGeometry(1, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2);
-    B.geometry(g, 'grass', Math.cos(a) * d, -2, Math.sin(a) * d, {
-      scale: [70 + rnd() * 60, 18 + rnd() * 26, 70 + rnd() * 60],
-      tint: [0.75 + rnd() * 0.2, 0.85 + rnd() * 0.1, 0.65 + rnd() * 0.1],
-      uvScale: 20,
-    });
-  }
-  // tree lines and copses around the edge of town
-  for (let i = 0; i < 120; i++) {
-    const a = rnd() * Math.PI * 2;
-    const d = 75 + rnd() * 120;
+    const rx = 110 + rnd() * 90;
+    const h = 30 + rnd() * 45;
+    const rz = 110 + rnd() * 90;
     const x = Math.cos(a) * d * 1.15;
     const z = Math.sin(a) * d;
-    if (Math.abs(x) < 70 && Math.abs(z) < 54) continue;
+    B.geometry(g, 'grass', x, -2, z, {
+      scale: [rx, h, rz],
+      tint: [0.75 + rnd() * 0.2, 0.85 + rnd() * 0.1, 0.65 + rnd() * 0.1],
+      uvScale: 30,
+    });
+    B.hills.push({ x, z, rx, rz, h: h - 2 });
+  }
+  // tree lines and copses around the edge of town
+  for (let i = 0; i < 170; i++) {
+    const a = rnd() * Math.PI * 2;
+    const d = 200 + rnd() * 260;
+    const x = Math.cos(a) * d * 1.2;
+    const z = Math.sin(a) * d;
+    if (Math.abs(x) < 212 && Math.abs(z) < 162) continue;
     const s = 1.0 + rnd() * 1.4;
     B.geometry(new THREE.IcosahedronGeometry(3.2 * s, 1), 'leaves', x, 3.0 * s, z, { tint: [0.55 + rnd() * 0.2, 0.75 + rnd() * 0.15, 0.45 + rnd() * 0.1], uvScale: 3 });
     B.cylinder(x, 0, z, 0.4 * s, 2.0 * s, 'bark', { segments: 5, cap: false });
   }
   // distant rows of houses
   const rows = [
-    [-150, -95, 0, 14],
-    [40, -110, 0, 12],
-    [-120, 100, 2, 12],
-    [60, 115, 2, 14],
-    [-110, -20, 3, 8],
-    [125, 30, 1, 8],
+    [-330, -240, 0, 14],
+    [60, -250, 0, 12],
+    [-260, 240, 2, 12],
+    [140, 250, 2, 14],
+    [-300, -90, 3, 8],
+    [300, 60, 1, 8],
   ];
   for (const [ox, oz, r, n] of rows) {
     B.withFrame(new Frame(ox, oz, r), () => {
@@ -744,7 +771,7 @@ function backdrop(B) {
     });
   }
   // a church spire on the hill
-  B.withFrame(new Frame(-170, 150, 0), () => {
+  B.withFrame(new Frame(-400, 330, 0), () => {
     B.box(0, 8, 0, 6, 26, 6, 'stone', { collide: false });
     B.geometry(new THREE.ConeGeometry(4.2, 18, 4).rotateY(Math.PI / 4), 'slate', 3, 35, 3, {});
   });

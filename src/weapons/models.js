@@ -181,6 +181,86 @@ const BUILDERS = {
     g.add(ring);
     return { muzzle: marker(g, 0, 0, 0), sightY: 0, mag: null, length: 0.08 };
   },
+  smokeGrenade(g) {
+    cyl(g, 0.03, 0.11, 0, 0, 0, mat('smokeBody', 0x5a6a5a), 'y', 10);
+    cyl(g, 0.031, 0.02, 0, 0.03, 0, mat('smokeBand', 0xe8e8e0), 'y', 10);
+    bx(g, 0.016, 0.02, 0.016, 0, 0.065, 0, steel());
+    bx(g, 0.012, 0.07, 0.008, 0.016, 0.03, 0.02, steelLight(), 0.15);
+    return { muzzle: marker(g, 0, 0, 0), sightY: 0, mag: null, length: 0.12 };
+  },
+  c4(g) {
+    bx(g, 0.12, 0.05, 0.08, 0, 0, 0, mat('c4', 0xb8a878));
+    bx(g, 0.122, 0.02, 0.03, 0, 0.0, 0, mat('c4tape', 0x2a2a2a));
+    bx(g, 0.03, 0.02, 0.02, 0.03, 0.035, 0, mat('c4box', 0x1a1a1a));
+    const led = bx(g, 0.008, 0.008, 0.008, 0.03, 0.05, 0.005, red());
+    led.material = red();
+    bx(g, 0.002, 0.002, 0.06, -0.03, 0.03, 0.02, mat('wireR', 0xc02020));
+    return { muzzle: marker(g, 0, 0, 0), sightY: 0, mag: null, length: 0.12 };
+  },
+  detonator(g) {
+    bx(g, 0.04, 0.07, 0.025, 0, 0, 0, polymer());
+    bx(g, 0.004, 0.06, 0.004, 0.012, 0.06, 0, steelLight());
+    const b = bx(g, 0.014, 0.008, 0.014, 0, 0.038, -0.008, red());
+    b.material = red();
+    return { muzzle: marker(g, 0, 0, 0), sightY: 0.05, mag: null, length: 0.08 };
+  },
+  mine(g) {
+    cyl(g, 0.17, 0.06, 0, 0.03, 0, olive(), 'y', 14);
+    cyl(g, 0.06, 0.02, 0, 0.07, 0, steel(), 'y', 10);
+    return { muzzle: marker(g, 0, 0, 0), sightY: 0, mag: null, length: 0.34 };
+  },
+  nlaw(g) {
+    // disposable anti-tank launcher carried on the shoulder
+    cyl(g, 0.075, 1.0, 0, 0.06, -0.05, olive(), 'z', 12);
+    cyl(g, 0.085, 0.12, 0, 0.06, -0.55, olive(), 'z', 12);
+    cyl(g, 0.085, 0.12, 0, 0.06, 0.45, olive(), 'z', 12);
+    bx(g, 0.04, 0.1, 0.05, 0, -0.04, 0.05, polymer(), 0.3);
+    bx(g, 0.04, 0.09, 0.04, 0, -0.03, -0.28, polymer(), 0.2);
+    // optic on the side
+    optic(g, 0.045, 0.045, 0.12, -0.11, 0.1, -0.1, steel());
+    bx(g, 0.04, 0.02, 0.06, -0.08, 0.08, -0.1, steel());
+    return { muzzle: marker(g, 0, 0.06, -0.62), sightY: 0.1, sightX: -0.11, mag: null, length: 1.0 };
+  },
+  rocket(g) {
+    cyl(g, 0.05, 0.7, 0, 0, 0, olive(), 'z', 8);
+    const nose = new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.16, 8), steel());
+    nose.rotation.x = -Math.PI / 2;
+    nose.position.z = -0.43;
+    g.add(nose);
+    for (let i = 0; i < 4; i++) {
+      const f = bx(g, 0.004, 0.12, 0.12, 0, 0, 0.3, steelLight());
+      f.rotation.z = (i * Math.PI) / 2;
+    }
+    const flame = new THREE.Mesh(new THREE.SphereGeometry(0.08, 8, 6), mat('flame', 0xffb040, { emissive: 0xff8020 }));
+    flame.scale.set(1, 1, 2.2);
+    flame.position.z = 0.42;
+    g.add(flame);
+    return { muzzle: marker(g, 0, 0, -0.5), sightY: 0, mag: null, length: 0.8 };
+  },
+  shell(g) {
+    cyl(g, 0.06, 0.55, 0, 0, 0, mat('brass', 0xc8a040), 'z', 8);
+    const tip = new THREE.Mesh(new THREE.ConeGeometry(0.06, 0.18, 8), steel());
+    tip.rotation.x = -Math.PI / 2;
+    tip.position.z = -0.36;
+    g.add(tip);
+    const glow = new THREE.Mesh(new THREE.SphereGeometry(0.07, 6, 4), mat('tracer', 0xffd080, { emissive: 0xffa040 }));
+    glow.position.z = 0.3;
+    g.add(glow);
+    return { muzzle: marker(g, 0, 0, -0.4), sightY: 0, mag: null, length: 0.7 };
+  },
+  bomb(g) {
+    cyl(g, 0.18, 1.6, 0, 0, 0, mat('bomb', 0x4a5040), 'z', 10);
+    const nose = new THREE.Mesh(new THREE.SphereGeometry(0.18, 10, 6), mat('bomb', 0x4a5040));
+    nose.scale.z = 1.6;
+    nose.position.z = -0.8;
+    g.add(nose);
+    for (let i = 0; i < 4; i++) {
+      const f = bx(g, 0.01, 0.42, 0.4, 0, 0, 0.85, steelLight());
+      f.rotation.z = (i * Math.PI) / 2 + Math.PI / 4;
+    }
+    bx(g, 0.37, 0.04, 0.05, 0, 0, -0.3, mat('bombBand', 0xd8b030));
+    return { muzzle: marker(g, 0, 0, 0), sightY: 0, mag: null, length: 1.9 };
+  },
   medkit(g) {
     bx(g, 0.2, 0.13, 0.07, 0, 0, 0, mat('medGreen', 0x1f8a4a));
     bx(g, 0.07, 0.02, 0.072, 0, 0, 0, mat('medWhite', 0xf4f4f0));
