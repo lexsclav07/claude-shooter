@@ -340,7 +340,8 @@ export class NavGraph {
   }
 
   // A* between two node indices. Returns node index list or null.
-  findPath(start, goal, maxIter = 30000) {
+  // penalty(n) optionally returns a cost multiplier for entering node n (route variety).
+  findPath(start, goal, maxIter = 30000, penalty = null) {
     if (start < 0 || goal < 0) return null;
     if (start === goal) return [start];
     const id = ++this.searchId;
@@ -373,7 +374,7 @@ export class NavGraph {
       for (let k = 0; k < a.length; k += 2) {
         const m = a[k];
         if (closed[m] === id) continue;
-        const ng = gn + a[k + 1];
+        const ng = gn + (penalty ? a[k + 1] * penalty(m) : a[k + 1]);
         if (seen[m] !== id || ng < g[m]) {
           seen[m] = id;
           g[m] = ng;
@@ -385,10 +386,10 @@ export class NavGraph {
     return null;
   }
 
-  pathBetween(ax, ay, az, bx, by, bz) {
+  pathBetween(ax, ay, az, bx, by, bz, penalty = null) {
     const s = this.nearest(ax, ay, az, 3, true);
     const e = this.nearest(bx, by, bz, 4, false);
-    const nodes = this.findPath(s, e);
+    const nodes = this.findPath(s, e, 30000, penalty);
     if (!nodes) return null;
     return nodes.map((n) => [this.x[n], this.y[n], this.z[n]]);
   }

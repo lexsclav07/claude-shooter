@@ -58,7 +58,7 @@ export const DEFAULT_SETTINGS = {
   masterVolume: 0.8,
   sfxVolume: 1.0,
   ambientVolume: 0.5,
-  shadows: 'high',
+  shadows: 'medium',
   renderScale: 1,
   showFps: false,
   fullscreen: false,

@@ -174,11 +174,13 @@ export class Hud {
   }
 
   onDeath(killer, wname, hs) {
+    this.killT = 0;
+    this.el.kill.classList.remove('show');
     const e = this.el.death;
     e.style.display = 'block';
     const self = !killer || killer === this.g.player;
     e.querySelector('.by').innerHTML = self ? 'YOU DIED' : `KILLED BY <span style="color:${TEAMS[killer.team].color}">${esc(killer.name)}</span>`;
-    e.querySelector('.wpn').textContent = self ? '' : `${wname}${hs ? ' · HEADSHOT' : ''} · ${Math.max(0, Math.round(killer.health))} HP left`;
+    e.querySelector('.wpn').textContent = self ? '' : `${wname}${hs ? ' · HEADSHOT' : ''}${killer.alive ? ` · they have ${Math.round(killer.health)} HP left` : ''}`;
     e.querySelector('.tip').textContent = `Press ${keyLabel(this.g.settings.keys.loadout[0])} to change loadout`;
   }
 

@@ -241,7 +241,16 @@ export class BotBrain {
   _goTo(pos, kind = 'move') {
     const nav = this.game.nav;
     const a = this.a;
-    const p = nav.pathBetween(a.pos.x, a.pos.y, a.pos.z, pos[0] ?? pos.x, pos[1] ?? pos.y, pos[2] ?? pos.z);
+    // Half the time, avoid the open high street so bots also flank through gardens and back lanes.
+    const flank = kind !== 'chase' && kind !== 'pickup' && Math.random() < 0.45;
+    const enemySide = a.team === 0 ? 1 : -1;
+    // avoid walking through the enemy spawn, and half the time avoid the open high street
+    const penalty = (n) => {
+      if (nav.x[n] * enemySide > 46) return 6;
+      if (flank && nav.y[n] < 0.5 && Math.abs(nav.z[n]) < 6.5 && Math.abs(nav.x[n]) < 46) return 3;
+      return 1;
+    };
+    const p = nav.pathBetween(a.pos.x, a.pos.y, a.pos.z, pos[0] ?? pos.x, pos[1] ?? pos.y, pos[2] ?? pos.z, penalty);
     this.goal = { pos: Array.isArray(pos) ? pos : [pos.x, pos.y, pos.z], kind };
     if (!p || p.length === 0) {
       this.path = null;
@@ -330,15 +339,21 @@ export class BotBrain {
     const g = this.game;
     const nav = g.nav;
     const a = this.a;
-    // join in on what teammates have seen recently
-    const intel = g.freshIntel(a.team, 8);
-    if (intel && Math.random() < 0.35 + this.s.aggression * 0.5) {
-      this._goTo(intel.pos, 'hunt');
-      this.mode = 'hunt';
-      this.huntUntil = g.time + 10;
-      return;
-    }
     const enemySide = a.team === 0 ? 1 : -1; // +x for Opus, -x for Sonnet
+    // join in on what teammates have seen recently - but don't all dogpile the same
+    // sighting, and don't chase people back into their own spawn
+    const intel = g.freshIntel(a.team, 8);
+    if (intel && intel.pos.x * enemySide < 44 && Math.random() < 0.2 + this.s.aggression * 0.35) {
+      let hunters = 0;
+      for (const o of g.actors) if (o.bot && o !== a && o.team === a.team && o.bot.mode === 'hunt' && o.bot.huntId === intel.actor.id) hunters++;
+      if (hunters < 2) {
+        this._goTo(intel.pos, 'hunt');
+        this.mode = 'hunt';
+        this.huntId = intel.actor.id;
+        this.huntUntil = g.time + 10;
+        return;
+      }
+    }
     const sniper = a.weapon && a.weapon.def.cls === 'sniper';
     for (let attempt = 0; attempt < 12; attempt++) {
       let pos;
@@ -354,7 +369,7 @@ export class BotBrain {
       // bias towards the middle and the enemy half of town
       const forward = pos[0] * enemySide;
       if (forward < -40 && Math.random() < 0.85) continue;
-      if (forward > 45 && Math.random() < 0.6) continue;
+      if (forward > 40) continue; // never camp the enemy spawn
       if (Math.hypot(pos[0] - a.pos.x, pos[2] - a.pos.z) < 8) continue;
       if (this._goTo(pos, dir ? 'spot' : 'move')) {
         this.holdDir = dir;
@@ -394,11 +409,19 @@ export class BotBrain {
       this._acquire(t);
       this.mode = 'engage';
     } else if (this.mode === 'engage') {
-      // lost sight: chase the last known position
-      this.mode = 'hunt';
-      this.huntUntil = g.time + 4 + this.s.aggression * 6;
+      // lost sight: chase the last known position (unless they ran home to their spawn)
       const k = this.target && this.known.get(this.target.id);
-      if (k) this._goTo(k.lastPos, 'hunt');
+      const enemySide = a.team === 0 ? 1 : -1;
+      if (k && k.lastPos.x * enemySide < 44) {
+        this.mode = 'hunt';
+        this.huntId = this.target.id;
+        this.huntUntil = g.time + 4 + this.s.aggression * 6;
+        this._goTo(k.lastPos, 'hunt');
+      } else {
+        this.mode = 'roam';
+        this.target = null;
+        this.path = null;
+      }
     }
 
     this.thinkT -= dt;
@@ -656,7 +679,7 @@ export class BotBrain {
     const def = w ? w.def : null;
     const e = a.eye(tmp);
     const head = t.pos.y + 1.33 - 0.37 * t.crouchT;
-    const chest = t.pos.y + 0.78 - 0.37 * t.crouchT;
+    const chest = t.pos.y + 0.66 - 0.37 * t.crouchT; // low chest: recoil climbs from here
     const lx = Math.cos(t.yaw) * t.lean * 0.35;
     const lz = -Math.sin(t.yaw) * t.lean * 0.35;
     // re-roll head/chest preference now and then

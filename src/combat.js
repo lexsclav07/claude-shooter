@@ -262,7 +262,7 @@ export class Combat {
         if (!g.world.clearLine(up.x, up.y, up.z, head.x, head.y, head.z, 'bullet')) continue;
       }
       const f = 1 - dist / R;
-      const dmg = GRENADE.damage * f * f * 0.85 + GRENADE.damage * 0.15 * f;
+      const dmg = GRENADE.damage * Math.pow(f, 1.6);
       g.damage(a, dmg, owner, 'grenade', 'body', pos);
       // knock-back
       const push = c.sub(pos).normalize().multiplyScalar(6 * f);

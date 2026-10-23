@@ -227,5 +227,5 @@ export const GRENADE = {
   fuse: 2.2,
   throwSpeed: 17,
   radius: 7.5,
-  damage: 105,
+  damage: 120,
 };

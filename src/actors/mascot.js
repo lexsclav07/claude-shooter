@@ -212,22 +212,22 @@ export class Mascot {
 export function hitboxes(crouchT, lean, out) {
   const drop = CROUCH_DROP * crouchT;
   const lx = lean * 0.3;
-  out.head.min[0] = -0.42 + lx;
-  out.head.max[0] = 0.42 + lx;
-  out.head.min[1] = 1.1 - drop;
+  out.head.min[0] = -0.38 + lx;
+  out.head.max[0] = 0.38 + lx;
+  out.head.min[1] = 1.17 - drop;
   out.head.max[1] = 1.6 - drop;
   out.body.min[0] = -0.46 + lx * 0.6;
   out.body.max[0] = 0.46 + lx * 0.6;
   out.body.min[1] = LEG_H - drop;
-  out.body.max[1] = 1.1 - drop;
+  out.body.max[1] = 1.17 - drop;
   out.legs.max[1] = Math.max(0.05, LEG_H - drop);
   return out;
 }
 
 export function makeHitboxes() {
   return {
-    head: { min: [-0.42, 1.1, -0.31], max: [0.42, 1.6, 0.31], zone: 'head' },
-    body: { min: [-0.46, LEG_H, -0.31], max: [0.46, 1.1, 0.31], zone: 'body' },
+    head: { min: [-0.38, 1.17, -0.31], max: [0.38, 1.6, 0.31], zone: 'head' },
+    body: { min: [-0.46, LEG_H, -0.31], max: [0.46, 1.17, 0.31], zone: 'body' },
     legs: { min: [-0.4, 0, -0.1], max: [0.4, LEG_H, 0.12], zone: 'legs' },
   };
 }

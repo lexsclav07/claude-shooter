@@ -2,7 +2,7 @@
 
 export const PHYS = {
   gravity: 20,
-  jumpSpeed: 6.4,
+  jumpSpeed: 6.9,
   stepHeight: 0.45,
   radius: 0.36, // half-width of every character's collision box
   standHeight: 1.55,

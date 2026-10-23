@@ -60,7 +60,7 @@ export class Viewmodel {
     this.root.add(this.nade.group);
 
     this.shells = [];
-    const shellGeo = new THREE.BoxGeometry(0.008, 0.008, 0.024);
+    const shellGeo = new THREE.BoxGeometry(0.005, 0.005, 0.014);
     const shellMat = new THREE.MeshLambertMaterial({ color: 0xc8a040 });
     for (let i = 0; i < 12; i++) {
       const s = new THREE.Mesh(shellGeo, shellMat);
@@ -162,8 +162,8 @@ export class Viewmodel {
     this.gun.group.localToWorld(p);
     this.camera.worldToLocal(p);
     s.m.position.copy(p);
-    s.v.set(0.9 + Math.random() * 0.4, 0.9 + Math.random() * 0.4, 0.2);
-    s.t = 0.6;
+    s.v.set(1.4 + Math.random() * 0.5, 1.1 + Math.random() * 0.5, 0.3);
+    s.t = 0.4;
     s.m.visible = true;
   }
 
@@ -325,8 +325,8 @@ export class Viewmodel {
     for (const s of this.shells) {
       if (!s.m.visible) continue;
       s.t -= dt;
-      s.v.y -= 6 * dt;
-      s.m.position.addScaledVector(s.v, dt * 0.35);
+      s.v.y -= 7 * dt;
+      s.m.position.addScaledVector(s.v, dt * 0.6);
       s.m.rotation.x += dt * 20;
       s.m.rotation.y += dt * 13;
       if (s.t <= 0) s.m.visible = false;
