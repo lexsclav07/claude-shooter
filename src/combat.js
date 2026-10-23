@@ -5,7 +5,6 @@ import { breakPane } from './world/builder.js';
 import { hitboxes, makeHitboxes } from './actors/mascot.js';
 import { GRENADE } from './weapons/defs.js';
 import { rayBox } from './physics.js';
-import { DEG } from './util.js';
 
 const HB = makeHitboxes();
 const ZONE_ORDER = ['head', 'body', 'legs'];
@@ -292,5 +291,3 @@ export class Combat {
     }
   }
 }
-
-export { DEG };

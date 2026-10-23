@@ -18,8 +18,8 @@ import { BotBrain, randomLoadout } from './actors/bot.js';
 import { PlayerController } from './actors/player.js';
 import { Hud } from './ui/hud.js';
 import { WEAPONS } from './weapons/defs.js';
-import { BOT_NAMES, MAX_HEALTH, RESPAWN_TIME, SPAWN_PROTECT, TEAMS, PHYS } from './config.js';
-import { clamp, damp } from './util.js';
+import { BOT_NAMES, MAX_HEALTH, RESPAWN_TIME, SPAWN_PROTECT, PHYS } from './config.js';
+import { damp } from './util.js';
 
 const tmp = new THREE.Vector3();
 
@@ -481,7 +481,11 @@ export class Game {
       // fixed-ish sub steps keep physics stable at low frame rates
       const steps = Math.ceil(dt / (1 / 60));
       const h = dt / steps;
-      for (let i = 0; i < steps; i++) this.update(h);
+      for (let i = 0; i < steps; i++) {
+        this.update(h);
+        // key/button presses only count once per frame, not once per sub-step
+        if (i === 0) this.input.pressed.clear();
+      }
     } else if (this.state === 'menu') {
       this.menuT += dt;
     }
@@ -645,5 +649,3 @@ export class Game {
     if (this.state !== 'menu') this.hud.update(dt);
   }
 }
-
-export { TEAMS, clamp };
