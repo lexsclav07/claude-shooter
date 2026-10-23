@@ -499,7 +499,8 @@ export class Combat {
       g.damageVehicle(directVehicle, def.blast.direct * mult, n.owner, n.type, n.pos);
     }
     if (directActor) g.damage(directActor, def.blast.damage * 0.6, n.owner, n.type, 'body', n.pos);
-    this.explode(n.pos, n.owner, { ...def.blast, weapon: n.type, skip: directVehicle });
+    // a direct hit already hurt that vehicle; mines (no direct value) hurt it through the blast
+    this.explode(n.pos, n.owner, { ...def.blast, weapon: n.type, skip: def.blast.direct ? directVehicle : null });
   }
 
   // ------------------------------------------------------------------ explosions & smoke

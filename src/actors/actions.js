@@ -136,8 +136,11 @@ export function updateActions(game, a, cmd, dt) {
     if (def.shellReload && cmd.firePressed && w.ammo > 0) w.cancelReload();
     else return;
   }
-  // charges and mines come out of the bag one at a time
-  if ((def.throwable || def.placeable) && w.ammo <= 0 && w.reserve > 0 && w.cooldown <= 0 && w.startReload()) return;
+  // charges and mines come out of the bag one at a time; launchers reload themselves
+  if ((def.throwable || def.placeable || def.projectile) && w.ammo <= 0 && w.reserve > 0 && w.cooldown <= 0 && w.startReload()) {
+    if (def.projectile) game.audio.play('magOut', { pos: sndPos });
+    return;
+  }
   if (w.cooldown > 0 || w.boltT > 0) return;
   const wants = def.auto ? cmd.fire : cmd.firePressed;
   if (!wants) return;

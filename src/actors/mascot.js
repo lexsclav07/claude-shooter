@@ -4,6 +4,7 @@
 import * as THREE from 'three';
 import { TEAMS } from '../config.js';
 import { buildGun } from '../weapons/models.js';
+import { bakeInto } from '../util3d.js';
 
 export const CLAUDE_ORANGE = 0xd97757;
 const BOX = new THREE.BoxGeometry(1, 1, 1);
@@ -15,6 +16,8 @@ function sharedMat(key, color) {
   if (!shared[key]) shared[key] = new THREE.MeshLambertMaterial({ color });
   return shared[key];
 }
+// guns in third person are baked into one vertex-coloured mesh
+const GUN_MAT = new THREE.MeshLambertMaterial({ vertexColors: true });
 
 function part(parent, w, h, d, x, y, z, material, shadow = true) {
   const m = new THREE.Mesh(BOX, material);
@@ -54,7 +57,10 @@ export class Mascot {
     this.root = new THREE.Group();
     this.body = new THREE.Group(); // everything that moves with the torso
     this.root.add(this.body);
-    this.bodyMat = new THREE.MeshLambertMaterial({ color: CLAUDE_ORANGE, emissive: 0x000000 });
+    // one material per Clawd (its emissive flashes when hit); every part is baked
+    // into a few vertex-coloured meshes that use it
+    this.bodyMat = new THREE.MeshLambertMaterial({ vertexColors: true, emissive: 0x000000 });
+    const orange = sharedMat('orange', CLAUDE_ORANGE);
     const black = sharedMat('eye', 0x161412);
     const teamMat = sharedMat(`team${teamIndex}`, team.hex);
     const teamDark = sharedMat(`teamDark${teamIndex}`, team.dark);
@@ -64,16 +70,20 @@ export class Mascot {
     for (const x of [-0.31, -0.12, 0.12, 0.31]) {
       const pivot = new THREE.Group();
       pivot.position.set(x, LEG_H, 0.02);
-      part(pivot, 0.13, LEG_H, 0.15, 0, -LEG_H / 2, 0, this.bodyMat);
+      part(pivot, 0.13, LEG_H, 0.15, 0, -LEG_H / 2, 0, orange);
       part(pivot, 0.14, 0.06, 0.17, 0, -LEG_H + 0.03, -0.01, teamDark); // boots
+      bakeInto(pivot, this.bodyMat);
       this.root.add(pivot);
       this.legs.push(pivot);
     }
 
     // torso / head (Clawd is one big block with eyes)
-    part(this.body, 0.84, 1.06, 0.6, 0, 0.53, 0, this.bodyMat);
-    this.eyes = [];
-    for (const x of [-0.18, 0.18]) this.eyes.push(part(this.body, 0.085, 0.2, 0.02, x, 0.9, -0.305, black, false));
+    part(this.body, 0.84, 1.06, 0.6, 0, 0.53, 0, orange);
+    const eyes = new THREE.Group();
+    eyes.position.set(0, 0.9, -0.305);
+    this.body.add(eyes);
+    for (const x of [-0.18, 0.18]) part(eyes, 0.085, 0.2, 0.02, x, 0, 0, black, false);
+    this.eyeMesh = bakeInto(eyes, GUN_MAT, { shadow: false });
     // team kit: vest band and headwear
     part(this.body, 0.86, 0.12, 0.62, 0, 0.25, 0, teamMat);
     part(this.body, 0.2, 0.1, 0.05, 0.2, 0.25, -0.32, teamDark, false); // pouch
@@ -92,13 +102,15 @@ export class Mascot {
     this.aim = new THREE.Group();
     this.aim.position.set(0, 0.48, 0);
     this.body.add(this.aim);
-    this.armL = part(this.aim, 0.15, 0.15, 0.36, -0.36, 0, -0.2, this.bodyMat);
-    this.armR = part(this.aim, 0.15, 0.15, 0.36, 0.34, 0, -0.22, this.bodyMat);
-    this.armL.rotation.y = -0.35;
-    this.armR.rotation.y = 0.15;
+    const armL = part(this.aim, 0.15, 0.15, 0.36, -0.36, 0, -0.2, orange);
+    const armR = part(this.aim, 0.15, 0.15, 0.36, 0.34, 0, -0.22, orange);
+    armL.rotation.y = -0.35;
+    armR.rotation.y = 0.15;
     this.gunHolder = new THREE.Group();
     this.gunHolder.position.set(0.16, 0.02, -0.42);
     this.aim.add(this.gunHolder);
+    bakeInto(this.aim, this.bodyMat, { skip: [this.gunHolder] });
+    bakeInto(this.body, this.bodyMat, { skip: [this.aim, eyes] });
     this.gun = null;
     this.gunModel = null;
 
@@ -129,9 +141,7 @@ export class Mascot {
     this.gunModel = model;
     if (this.gun) this.gunHolder.remove(this.gun.group);
     this.gun = buildGun(model);
-    this.gun.group.traverse((o) => {
-      if (o.isMesh) o.castShadow = true;
-    });
+    bakeInto(this.gun.group, GUN_MAT);
     this.gunHolder.add(this.gun.group);
     this.gun.muzzle.add(this.flash);
   }
@@ -193,7 +203,7 @@ export class Mascot {
     this.blinkT -= dt;
     const blinking = this.blinkT < 0.12;
     if (this.blinkT < 0) this.blinkT = 2.5 + Math.random() * 3.5;
-    for (const e of this.eyes) e.scale.y = blinking ? 0.03 : 0.2;
+    this.eyeMesh.scale.y = blinking ? 0.15 : 1;
 
     // hit flash
     this.hitT = Math.max(0, this.hitT - dt);

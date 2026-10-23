@@ -4,6 +4,7 @@
 import * as THREE from 'three';
 import { TEAMS } from '../config.js';
 import { CLAUDE_ORANGE } from '../actors/mascot.js';
+import { bakeInto } from '../util3d.js';
 
 const BOX = new THREE.BoxGeometry(1, 1, 1);
 const M = {};
@@ -169,9 +170,12 @@ export function buildTank(team) {
   const crew = miniClawd(turret, team);
   crew.position.set(0.55, 0.95, 0.3);
 
-  root.traverse((o) => {
-    if (o.isMesh) o.receiveShadow = true;
-  });
+  // bake each moving part into a single mesh (a few draw calls per tank)
+  const vc = new THREE.MeshLambertMaterial({ vertexColors: true });
+  bakeInto(hull, vc);
+  bakeInto(gun, vc);
+  bakeInto(crew, vc);
+  bakeInto(turret, vc, { skip: [gun, crew], filter: (o) => !o.material.map });
   return { root, hull, turret, gun, muzzle, coax, crew };
 }
 
@@ -255,5 +259,8 @@ export function buildJet(team) {
     const bomb = cyl(body, 0.24, 0.24, 2.0, s * 3.8, -0.7, 3.1, mat('bombMat', 0x4a5040), 'z', 8);
     stores.push(bomb);
   }
+  const vc = new THREE.MeshLambertMaterial({ vertexColors: true });
+  bakeInto(pilot, vc, { shadow: false });
+  bakeInto(body, vc, { skip: [pilot], filter: (o) => !glows.includes(o) && !stores.includes(o) && o.material !== canopy });
   return { root, body, glows, stores, pilot };
 }

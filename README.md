@@ -1,8 +1,9 @@
 # Clawd Strike
 
-A Counter-Strike-flavoured **team deathmatch** FPS that runs in your browser. Both teams are
-made of **Clawd**, the little orange Claude mascot, and they fight it out in **Little Clawdington**,
-a small British town with one- and two-storey houses.
+A Counter-Strike-flavoured **team deathmatch** FPS that runs in your browser, with tanks and
+jets. Both teams are made of **Clawd**, the little orange Claude mascot. They fight it out in
+**Little Clawdington**, a small British town with one- and two-storey houses, and across the
+farms, woods and country lanes around it.
 
 Everything (map, textures, models, sounds) is generated in code. There are no asset files, so the
 whole game builds into a single HTML file.
@@ -10,18 +11,43 @@ whole game builds into a single HTML file.
 ## Features
 
 **Gameplay**
-- 5v5 team deathmatch by default (1v1 up to 8v8), with a score limit, time limit, respawns and spawn protection
+- 8v8 team deathmatch by default (1v1 up to 12v12), with a score limit, time limit, respawns and
+  spawn protection
+- Pick a **class every time you die** on the deploy screen. Infantry classes are Rifleman, Engineer,
+  Recon and Medic. **Tank Commander** spawns you in a Challenger 2 and **Pilot** in a Typhoon,
+  if your team has one free
 - Bots with four difficulty levels (Recruit, Regular, Veteran, Elite). You can set enemy and teammate
-  difficulty separately, and change either one mid-match from the pause menu
+  difficulty separately, and change either one mid-match from the pause menu. Bots pick classes,
+  drive tanks, fly jets, fire NLAWs at tanks, throw C4 and smoke, and get out of the way of tanks
 - Movement: sprint, crouch, slide (sprint + crouch), crouch-jump, quiet walk, and lean/peek with Q/E
 - Aiming: aim down sights with right-click, a real scope on the sniper and a SUSAT optic on the L85
 - CS-style shooting: first-shot accuracy, spread when moving or jumping, spray patterns you pull down
   against, damage falloff, and head, body and leg damage multipliers
 - Wall penetration: wooden fences, sheds and doors can be shot through; brick and stone stop bullets.
   Every window is breakable glass
-- Health bar plus ways to heal: two medkits per life (H or 4) and first-aid boxes around town that
-  respawn. Ammo crates refill your ammo and grenades. Health regen can be switched on as a match option
-- Frag grenades that bounce off walls, smash windows and knock players back
+- Health bar plus ways to heal: medkits (H) and first-aid boxes around the map that respawn. Ammo
+  crates refill your ammo, gadgets and frags. Health regen can be switched on as a match option
+- **Destruction:** fences, hedges, sheds, phone boxes, bus shelters, cars, lamp posts and more can be
+  blown up or flattened by tanks. Fuel drums and petrol pumps explode when shot. Everything is
+  rebuilt for the next match
+
+**Classes**
+
+| Class | Kit |
+|---|---|
+| Rifleman | AK-47 or L85A2, 2 frags, 1 smoke, 2 medkits |
+| Engineer | MP5 or shotgun, **NLAW** anti-tank launcher, **AT mines**, 1 frag, 1 medkit |
+| Recon | L96 sniper, remote **C4**, 1 frag, 1 smoke, 1 medkit |
+| Medic | L85A2, MP5 or shotgun, 3 smokes, 5 medkits |
+| Tank Commander | Challenger 2: 120 mm cannon, coaxial MG, gunner sight |
+| Pilot | Typhoon: 27 mm cannon, rockets, free-fall bombs |
+
+Everyone also gets a pistol (Hi-Power or Webley) and a knife. Each team gets 1 tank and 1 jet
+(2 tanks from 8v8, 2 jets from 11v11). Vehicles can be switched off in match setup.
+
+**Explosives:** frag grenades, smoke grenades (they block everyone's view, bots included), NLAW
+rockets (rear hits on tanks do 45% more), sticky C4 you detonate with right-click, AT mines that
+only go off under enemy tanks, tank shells, jet rockets and bombs.
 
 **Weapons**
 
@@ -33,17 +59,20 @@ whole game builds into a single HTML file.
 | Pump Shotgun | 9 pellets, loads shell by shell | | |
 | L96 Sniper | British bolt-action, one-shot body kills | | |
 
-**The town:** a high street with a pub (The Red Lion), a chippy (The Codfather), a pharmacy,
-post office, bakery, newsagent, café and barber. There are terraced and semi-detached houses
-with working stairs and upstairs rooms, back gardens with sheds and fences, ginnels (narrow
-alleys) and back lanes, St Mary's church and graveyard, allotments with greenhouses, a village
-green with a bandstand and war memorial, a playground and village hall, and bungalows. Street
-props include red phone boxes, pillar boxes, Belisha beacons on a zebra crossing, double yellow
-lines and cars with yellow number plates.
+**The map:** the town is a high street with a pub (The Red Lion), a chippy (The Codfather), a
+pharmacy, post office, bakery, newsagent, café and barber. There are terraced and semi-detached
+houses with working stairs and upstairs rooms, back gardens with sheds and fences, ginnels and back
+lanes, St Mary's church, allotments, a village green with a bandstand, a playground and bungalows.
+Around it is open countryside roughly 400 m × 300 m that tanks can drive through. It has two farms with
+barns and hay bales, woods, fields and hedgerows, a petrol station, a country pub, cottages, a WW2
+pillbox, a ring road, and a military depot for each team where its vehicles spawn. Both halves of
+the map are the same plan rotated 180° so neither team has an advantage.
 
-**UI:** rotating radar with callouts for your current location, a kill feed, the Tab scoreboard,
-hit markers, damage-direction arcs, grenade warnings, a dynamic crosshair you can customise,
-rebindable keys, sensitivity, FOV, graphics and audio settings, a loadout screen and a death cam.
+**UI:** deploy / class screen, rotating radar (it zooms out in vehicles) with callouts for your
+current location, a kill feed, the Tab scoreboard, hit markers, damage-direction arcs, grenade
+warnings, vehicle HUDs (turret direction, reload, speed, altitude, throttle, bomb pipper, stall /
+pull-up warnings), a dynamic crosshair you can customise, rebindable keys, sensitivity, FOV,
+graphics and audio settings, and a death cam.
 
 ## Running it
 
@@ -76,13 +105,15 @@ npm run dev
 npm run build
 ```
 
-This writes `dist/index.html`, one self-contained file of about 750 KB. Double-click it in any
+This writes `dist/index.html`, one self-contained file of about 900 KB. Double-click it in any
 modern browser or copy it to a USB stick. It works without a web server, so it's handy on a uni PC
 where you can't install anything.
 
 Chrome, Edge and Firefox all work. Use a desktop browser: the game needs pointer lock and a keyboard.
 
 ## Controls
+
+**On foot**
 
 | Action | Default |
 |---|---|
@@ -94,9 +125,33 @@ Chrome, Edge and Firefox all work. Use a desktop browser: the game needs pointer
 | Fire / aim down sights | Left / right mouse |
 | Reload / inspect | R / F |
 | Primary / pistol / knife | 1 / 2 / 3, mouse wheel, X for last weapon |
-| Grenade | G or 5 |
-| Medkit | H or 4 |
-| Scoreboard / loadout / pause | Tab / B / Esc |
+| Class gadgets (NLAW, C4, AT mine) | 4 / 5 |
+| Frag / smoke grenade | G / T |
+| Medkit | H |
+| Detonate C4 | Right mouse while holding C4 |
+| Scoreboard / class & loadout / pause | Tab / B / Esc |
+
+**Tank**
+
+| Action | Default |
+|---|---|
+| Drive / turn the hull | W S / A D |
+| Aim the turret | Mouse |
+| Fire | Left mouse (1 = cannon, 2 = coax MG, or hold Space for the MG) |
+| Gunner sight | Right mouse |
+
+**Jet**
+
+| Action | Default |
+|---|---|
+| Steer | Mouse: point where you want to go and the jet banks and pulls to follow |
+| Throttle / afterburner | W S / Left Shift |
+| Roll / rudder | A D / Q E |
+| Cannon | Left mouse |
+| Rockets or bombs | Right mouse (1 = rockets, 2 = bombs) |
+
+Bombs land on the diamond pipper. If you fly too far out, the autopilot turns you back. Rockets and
+bombs slowly rearm while you're not firing them.
 
 You can rebind all of these in **Settings → Keys**. If you'd like crouch on Ctrl like CS, turn on
 "Go fullscreen when a match starts" in Settings → Video. Outside fullscreen, Ctrl+W closes the tab.
@@ -106,18 +161,25 @@ You can rebind all of these in **Settings → Keys**. If you'd like crouch on Ct
 | File | What's in it |
 |---|---|
 | `src/config.js` | **Bot difficulty presets** (reaction time, aim error, turn speed, spray control, strafing and more), movement physics, team names and colours, match defaults |
-| `src/weapons/defs.js` | Every gun's damage, fire rate, magazine, spread, recoil, penetration and zoom. Add an entry here and to `PRIMARIES` to get a new gun |
-| `src/weapons/models.js` | The box-built gun models |
-| `src/world/map.js` | Town layout. The north half is defined once and the south half is the same plan rotated 180° with different buildings, which keeps the map fair |
+| `src/classes.js` | The classes, what they carry and the per-team vehicle limits |
+| `src/weapons/defs.js` | Every gun's damage, fire rate, magazine, spread, recoil, penetration and zoom, plus the gadgets and vehicle guns |
+| `src/combat.js` | Bullets, explosions, smoke, and the `PROJECTILES` table (blast radius and damage for grenades, rockets, shells, bombs, C4 and mines) |
+| `src/vehicles/tank.js`, `jet.js` | Vehicle handling (`TANK` / `JET` tuning at the top), weapons and cameras |
+| `src/vehicles/ai.js` | Tank and jet bots, and the grid tanks path-find on |
+| `src/vehicles/models.js` | The Challenger 2 and Typhoon models |
+| `src/world/map.js` | Town layout, spawns and vehicle spawns |
+| `src/world/countryside.js` | Farms, woods, fields, the petrol station, depots and the map edge |
 | `src/world/buildings.js` | Building generator: walls with door/window openings, floors, stairs, roofs, plus templates for terraces, shops, the pub, bungalows and the church |
-| `src/world/props.js` | Phone boxes, cars, fences, hedges, trees, headstones and other props |
-| `src/actors/bot.js` | Bot brain: sight cone and line of sight, hearing, aim model, and engage, hunt, roam, retreat and heal behaviour |
+| `src/world/props.js` | Phone boxes, cars, fences, hedges, trees and other props, and how much damage each one takes |
+| `src/world/destruction.js` | Smashing props, wrecks, chain explosions and rebuilding for the next match |
+| `src/actors/bot.js` | Infantry bot brain: sight cone and line of sight, hearing, aim model, and engage, hunt, roam, retreat and heal behaviour |
 | `src/nav.js` | Navigation graph, built automatically from the collision boxes, plus A* |
 | `src/actors/mascot.js` | The Clawd model and hitboxes |
-| `src/fx/audio.js` | All sound effects, synthesised with WebAudio |
+| `src/fx/audio.js` | All sound effects and engine loops, synthesised with WebAudio |
 
 The nav graph is generated from the level geometry. If you add a building with doors and stairs
-through `building()` in `buildings.js`, bots will path through it automatically.
+through `building()` in `buildings.js`, bots will path through it automatically. Props built inside
+`B.destructible({...}, () => {...})` become breakable.
 
 ### Debugging
 
