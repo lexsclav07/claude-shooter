@@ -72,6 +72,7 @@ export class Menu {
       <button class="big" data-act="loadout">LOADOUT</button>
       <button class="big" data-act="settings">SETTINGS</button>
       <button class="big" data-act="howto">HOW TO PLAY</button>
+      <div class="touchnote">Clawd Strike needs a keyboard and mouse. Open it on a laptop or desktop to play.</div>
       <div class="foot">Map built: ${this.g.world.boxes.length} boxes · ${this.g.nav.count} nav nodes · ${this.g.loadMs} ms</div>
     </div>`;
   }
