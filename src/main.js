@@ -2,6 +2,7 @@ import './style.css';
 import { loadSettings } from './settings.js';
 import { Game } from './game.js';
 import { Menu } from './ui/menu.js';
+import { CLASSES } from './classes.js';
 
 const settings = loadSettings();
 const params = new URLSearchParams(location.search);
@@ -14,6 +15,7 @@ const clickToPlay = document.getElementById('click-to-play');
 function boot() {
   const game = new Game(document.getElementById('app'), settings);
   const menu = new Menu(game);
+  game.menu = menu;
   window.__game = game;
   window.__menu = menu;
   loading.style.display = 'none';
@@ -66,11 +68,34 @@ function boot() {
     requestLock();
   });
 
+  const openDeploy = () => {
+    game.hud.loadoutOpen = true;
+    game.input.enabled = false;
+    game.input.unlock();
+    menu.openIngame('deploy');
+  };
+  const needsDeploy = () => game.player && !game.player.alive && !game.player.bot && !game.deployRequested && game.match && !game.match.over;
+
   game.on('resume', () => {
+    if (game.state === 'paused') game.state = 'playing';
+    if (needsDeploy()) {
+      openDeploy();
+      return;
+    }
     game.hud.loadoutOpen = false;
     menu.show(null);
-    if (game.state === 'paused' && TEST) game.state = 'playing';
     requestLock();
+  });
+
+  game.on('deployScreen', () => {
+    if (game.state !== 'playing' || menu.screen === 'pause') return;
+    openDeploy();
+  });
+
+  game.on('pauseFromDeploy', () => {
+    game.hud.loadoutOpen = false;
+    game.state = 'paused';
+    menu.showRoot('pause');
   });
 
   game.on('quit', () => {
@@ -88,6 +113,10 @@ function boot() {
   });
 
   game.on('openLoadout', () => {
+    if (needsDeploy()) {
+      openDeploy();
+      return;
+    }
     game.hud.loadoutOpen = true;
     game.input.enabled = false;
     game.input.unlock();
@@ -98,17 +127,19 @@ function boot() {
     if (!game.player) return;
     game.pendingLoadout = lo;
     const p = game.player;
-    // still standing in spawn? swap guns right away, CS buy-zone style
-    if (p.alive && p.spawnProtect > 0) {
+    // still standing in spawn as infantry? swap kit right away, CS buy-zone style
+    const c = CLASSES[lo.cls];
+    if (p.alive && p.spawnProtect > 0 && !p.vehicle && c && !c.vehicle) {
       p.loadout = { ...lo };
       game.pendingLoadout = null;
-      p.giveLoadout();
+      p.giveLoadout(lo.cls);
     }
   });
 
   window.addEventListener('keydown', (e) => {
     if (e.code !== 'Escape' || game.input.onKeyCapture) return;
-    if (game.hud.loadoutOpen) menu.closeIngame();
+    if (menu.screen === 'deploy') game.emit('pauseFromDeploy');
+    else if (game.hud.loadoutOpen) menu.closeIngame();
     else if (game.state === 'paused' && menu.screen === 'pause') game.emit('resume');
   });
 

@@ -249,10 +249,12 @@ export function phoneBox(B, x, z, r = 0) {
 
 export function postBox(B, x, z) {
   const red = 0xc0161b;
-  B.cylinder(x, 0, z, 0.27, 1.45, 'paint', { tint: red, segments: 14, collide: true, kind: 'metal' });
-  B.cylinder(x, 1.45, z, 0.31, 0.08, 'paint', { tint: red, segments: 14 });
-  B.geometry(new THREE.SphereGeometry(0.27, 14, 6, 0, Math.PI * 2, 0, Math.PI / 2), 'paint', x, 1.53, z, { tint: red });
-  B.box(x - 0.13, 1.18, z - 0.285, x + 0.13, 1.22, z - 0.26, 'dark', { collide: false });
+  B.destructible({ hp: 220, debris: 'metal' }, () => {
+    B.cylinder(x, 0, z, 0.27, 1.45, 'paint', { tint: red, segments: 14, collide: true, kind: 'metal' });
+    B.cylinder(x, 1.45, z, 0.31, 0.08, 'paint', { tint: red, segments: 14 });
+    B.geometry(new THREE.SphereGeometry(0.27, 14, 6, 0, Math.PI * 2, 0, Math.PI / 2), 'paint', x, 1.53, z, { tint: red });
+    B.box(x - 0.13, 1.18, z - 0.285, x + 0.13, 1.22, z - 0.26, 'dark', { collide: false });
+  });
 }
 
 export function belisha(B, x, z) {

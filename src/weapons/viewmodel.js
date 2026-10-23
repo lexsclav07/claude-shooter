@@ -14,6 +14,9 @@ const POSES = {
   sniper: { hip: [0.2, -0.2, -0.52], ads: -0.26, fore: [0, -0.04, -0.33] },
   pistol: { hip: [0.16, -0.17, -0.46], ads: -0.36, fore: [-0.03, -0.07, 0.02] },
   melee: { hip: [0.2, -0.19, -0.42], ads: -0.36, fore: null },
+  launcher: { hip: [0.2, -0.12, -0.16], ads: -0.2, fore: [0, -0.04, -0.3] },
+  c4: { hip: [0.15, -0.17, -0.36], ads: -0.36, fore: null },
+  mine: { hip: [0.12, -0.24, -0.42], ads: -0.42, fore: [-0.17, 0, 0] },
 };
 
 const smooth = (t) => t * t * (3 - 2 * t);
@@ -58,6 +61,12 @@ export class Viewmodel {
     this.nade = buildGun('grenade');
     this.nade.group.visible = false;
     this.root.add(this.nade.group);
+    this.smokeNade = buildGun('smokeGrenade');
+    this.smokeNade.group.visible = false;
+    this.root.add(this.smokeNade.group);
+    this.detonator = buildGun('detonator');
+    this.detonator.group.position.set(-0.17, -0.03, 0.03);
+    this.detonator.group.rotation.set(0.4, 0.3, 0);
 
     this.shells = [];
     const shellGeo = new THREE.BoxGeometry(0.005, 0.005, 0.014);
@@ -97,6 +106,8 @@ export class Viewmodel {
     if (this.gun) this.holder.remove(this.gun.group);
     this.gun = buildGun(def.model);
     this.holder.add(this.gun.group);
+    if (def.cls === 'c4') this.holder.add(this.detonator.group);
+    else this.holder.remove(this.detonator.group);
     this.gun.muzzle.add(this.flash);
     this.flash.position.set(0, 0, -0.06);
     this._layoutArms();
@@ -129,15 +140,15 @@ export class Viewmodel {
   }
 
   fire(def) {
-    const heavy = { sniper: 1.6, shotgun: 1.5, pistol: 1.1, rifle: 1, smg: 0.7, melee: 0 }[def.cls] ?? 1;
+    const heavy = { sniper: 1.6, shotgun: 1.5, pistol: 1.1, rifle: 1, smg: 0.7, melee: 0, launcher: 2.6, c4: 0, mine: 0 }[def.cls] ?? 1;
     this.kick = Math.min(0.12, this.kick + 0.028 * heavy);
     this.kickRot = Math.min(0.35, this.kickRot + 0.05 * heavy);
-    if (def.cls !== 'melee') {
+    if (def.cls !== 'melee' && def.cls !== 'c4' && def.cls !== 'mine') {
       this.flashT = 0.045;
       this.flash.rotation.z = Math.random() * Math.PI;
       this.flash.scale.setScalar(def.cls === 'smg' ? 0.8 : def.cls === 'pistol' ? 0.7 : 1.1);
       this.flashLight.intensity = 3;
-      if (def.cls !== 'shotgun' && def.cls !== 'sniper' && def.model !== 'webley') this._ejectShell();
+      if (def.cls !== 'shotgun' && def.cls !== 'sniper' && def.cls !== 'launcher' && def.model !== 'webley') this._ejectShell();
     }
     this.inspectT = 0;
   }
@@ -182,7 +193,8 @@ export class Viewmodel {
 
     // position: hip -> ads
     const sightY = this.gun ? this.gun.sightY : 0.08;
-    const hx = lerp(pose.hip[0], 0, ads);
+    const sightX = this.gun && this.gun.sightX ? this.gun.sightX : 0;
+    const hx = lerp(pose.hip[0], -sightX, ads);
     const hy = lerp(pose.hip[1], -sightY, ads);
     const hz = lerp(pose.hip[2], pose.ads, ads);
     this.root.position.set(hx, hy, hz);
@@ -267,8 +279,13 @@ export class Viewmodel {
       this.gun.bolt.position.z = 0.12 + 0.08 * Math.max(0, k * 2 - 1);
     }
 
-    // knife swing
-    if (def.cls === 'melee') {
+    // charges and mines leave the hand once used
+    if (this.gun && (def.cls === 'c4' || def.cls === 'mine' || def.cls === 'launcher')) {
+      this.gun.group.visible = w.ammo > 0 || (def.cls === 'launcher' && w.reloadT > 0 && w.reloadT < def.reload * 0.5);
+    }
+
+    // knife swing (also used for throwing C4 and placing mines)
+    if (def.cls === 'melee' || def.cls === 'c4' || def.cls === 'mine') {
       this.swingT = Math.min(1, this.swingT + dt * 3.2);
       if (this.swingT < 1) {
         const s = Math.sin(this.swingT * Math.PI);
@@ -293,7 +310,9 @@ export class Viewmodel {
     const busy = ctx.healProgress >= 0 || ctx.throwProgress >= 0;
     this.holder.visible = !(def.scope && a.adsT > 0.92);
     this.medkit.group.visible = ctx.healProgress >= 0;
-    this.nade.group.visible = ctx.throwProgress >= 0;
+    const nade = ctx.throwType === 'smoke' ? this.smokeNade : this.nade;
+    (ctx.throwType === 'smoke' ? this.nade : this.smokeNade).group.visible = false;
+    nade.group.visible = ctx.throwProgress >= 0;
     if (busy) {
       an.position.y -= 0.3;
       an.rotation.x -= 0.6;
@@ -308,7 +327,7 @@ export class Viewmodel {
     }
     if (ctx.throwProgress >= 0) {
       const t = ctx.throwProgress;
-      const g = this.nade.group;
+      const g = nade.group;
       const wind = t < 0.6 ? smooth(t / 0.6) : 0;
       const fly = t > 0.6 ? (t - 0.6) / 0.4 : 0;
       g.position.set(-0.04, 0.05 + wind * 0.07 + fly * 0.1, 0.06 + wind * 0.05 - fly * 0.6);

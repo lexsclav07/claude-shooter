@@ -228,12 +228,16 @@ export class Combat {
   spawnProjectile(type, owner, pos, vel, opts = {}) {
     const def = PROJECTILES[type];
     const g = this.game;
-    const info = buildGun(def.model);
-    const mesh = info.group;
+    this.templates ||= {};
+    if (!this.templates[def.model]) {
+      const t = buildGun(def.model).group;
+      t.traverse((o) => {
+        if (o.isMesh) o.castShadow = true;
+      });
+      this.templates[def.model] = t;
+    }
+    const mesh = this.templates[def.model].clone();
     mesh.scale.setScalar(def.scale);
-    mesh.traverse((o) => {
-      if (o.isMesh) o.castShadow = true;
-    });
     mesh.position.copy(pos);
     if (def.impact) mesh.lookAt(tmpQ.copy(pos).add(vel));
     g.scene.add(mesh);
@@ -307,7 +311,6 @@ export class Combat {
 
   update(dt) {
     const g = this.game;
-    const world = g.world;
     for (let i = this.projectiles.length - 1; i >= 0; i--) {
       const n = this.projectiles[i];
       if (n.dead) continue;
@@ -506,8 +509,10 @@ export class Combat {
     const R = opts.radius ?? 7.5;
     const dmgMax = opts.damage ?? 120;
     const weapon = opts.weapon ?? 'frag';
-    g.fx.explosion(pos, R / 7.5);
-    g.audio.play(R > 9 ? 'bigExplosion' : 'explosion', { pos });
+    if (!opts.silent) {
+      g.fx.explosion(pos, R / 7.5);
+      g.audio.play(R > 9 ? 'bigExplosion' : 'explosion', { pos });
+    }
     g.emitNoise(pos, 60 + R * 4, owner, 'explosion');
     const up = tmpQ.copy(pos);
     up.y += 0.25;

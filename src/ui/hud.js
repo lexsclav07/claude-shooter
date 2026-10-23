@@ -1,11 +1,21 @@
 // In-game HUD: health, ammo, crosshair, radar, kill feed, scoreboard, messages.
 
+import * as THREE from 'three';
 import { TEAMS, MAX_HEALTH, DIFFICULTY } from '../config.js';
+import { CLASSES } from '../classes.js';
+import { TANK } from '../vehicles/tank.js';
 import { formatTime, clamp, DEG } from '../util.js';
 import { keyLabel } from '../settings.js';
 
+const proj = new THREE.Vector3();
+
 const HTML = `
 <div id="hud-crosshair"><i class="ch t"></i><i class="ch b"></i><i class="ch l"></i><i class="ch r"></i><i class="ch dot"></i></div>
+<div id="hud-vcross"><i></i></div>
+<div id="hud-pip"></div>
+<div id="hud-bomb"></div>
+<div id="hud-vstats"></div>
+<div id="hud-warn"></div>
 <div id="hud-hitmarker"><i></i><i></i><i></i><i></i></div>
 <canvas id="hud-dmg" width="320" height="320"></canvas>
 <div id="hud-vignette"></div>
@@ -21,7 +31,7 @@ const HTML = `
 <div id="hud-health">
   <div class="row"><span class="cross">✚</span><span class="num">100</span>
   <div class="bar"><div class="fill"></div><div class="ghost"></div></div></div>
-  <div class="items"><span class="med"></span><span class="nade"></span></div>
+  <div class="items"><span class="med"></span><span class="nade"></span><span class="smk"></span></div>
 </div>
 <div id="hud-ammo"><div class="wname"></div><div class="row"><span class="mag">30</span><span class="res">/ 90</span></div><div class="reload"><div></div></div></div>
 <div id="hud-center"></div>
@@ -69,6 +79,13 @@ export class Hud {
       health: $('#hud-health'),
       med: $('#hud-health .med'),
       nade: $('#hud-health .nade'),
+      smk: $('#hud-health .smk'),
+      cross2: $('#hud-health .cross'),
+      vcross: $('#hud-vcross'),
+      pip: $('#hud-pip'),
+      bomb: $('#hud-bomb'),
+      vstats: $('#hud-vstats'),
+      warn: $('#hud-warn'),
       wname: $('#hud-ammo .wname'),
       mag: $('#hud-ammo .mag'),
       res: $('#hud-ammo .res'),
@@ -181,7 +198,7 @@ export class Hud {
     const self = !killer || killer === this.g.player;
     e.querySelector('.by').innerHTML = self ? 'YOU DIED' : `KILLED BY <span style="color:${TEAMS[killer.team].color}">${esc(killer.name)}</span>`;
     e.querySelector('.wpn').textContent = self ? '' : `${wname}${hs ? ' · HEADSHOT' : ''}${killer.alive ? ` · they have ${Math.round(killer.health)} HP left` : ''}`;
-    e.querySelector('.tip').textContent = `Press ${keyLabel(this.g.settings.keys.loadout[0])} to change loadout`;
+    e.querySelector('.tip').textContent = 'Pick your class on the deploy screen';
   }
 
   onKill(victim, hs, streak) {
@@ -237,13 +254,13 @@ export class Hud {
         .sort((x, y) => y.score - x.score)
         .map(
           ({ a, score }) =>
-            `<tr class="${a === g.player ? 'me' : ''} ${a.alive ? '' : 'dead'}"><td>${esc(a.name)}${a.bot ? `<small>${DIFFICULTY[a.bot.level].label}</small>` : ''}</td><td>${a.weapons.primary ? a.weapons.primary.def.name : ''}</td><td>${a.kills}</td><td>${a.deaths}</td><td>${a.assists}</td><td>${score}</td></tr>`,
+            `<tr class="${a === g.player ? 'me' : ''} ${a.alive ? '' : 'dead'}"><td>${esc(a.name)}${a.bot ? `<small>${DIFFICULTY[a.bot.level].label}</small>` : ''}</td><td>${CLASSES[a.cls]?.name ?? ''}</td><td>${a.kills}</td><td>${a.deaths}</td><td>${a.assists}</td><td>${score}</td></tr>`,
         )
         .join('');
     const table = (team) => `
       <div class="side t${team}">
         <div class="hdr"><span>${TEAMS[team].name}</span><span class="sc">${m.scores[team]}</span></div>
-        <table><tr><th>PLAYER</th><th>WEAPON</th><th>K</th><th>D</th><th>A</th><th>SCORE</th></tr>${rows(team)}</table>
+        <table><tr><th>PLAYER</th><th>CLASS</th><th>K</th><th>D</th><th>A</th><th>SCORE</th></tr>${rows(team)}</table>
       </div>`;
     return `<div class="title">TEAM DEATHMATCH · LITTLE CLAWDINGTON</div>${table(0)}${table(1)}`;
   }
@@ -274,24 +291,40 @@ export class Hud {
     else if (cd > -0.8) this.centerMessage('<div class="count go">GO!</div>');
     else this.centerMessage('');
 
-    // health
-    const hp = Math.max(0, Math.ceil(p.health));
+    // health (or the vehicle's armour)
+    const veh = p.alive ? p.vehicle : null;
+    const hp = veh ? Math.max(0, Math.ceil((veh.hp / veh.maxHp) * 100)) : Math.max(0, Math.ceil(p.health));
     el.hpNum.textContent = hp;
+    el.cross2.textContent = veh ? (veh.kind === 'tank' ? '⛨' : '✈') : '✚';
     el.hpFill.style.width = `${(hp / MAX_HEALTH) * 100}%`;
     this.ghostHp += (hp - this.ghostHp) * Math.min(1, dt * (hp > this.ghostHp ? 20 : 2.5));
     el.hpGhost.style.width = `${(this.ghostHp / MAX_HEALTH) * 100}%`;
     el.health.classList.toggle('low', hp <= 30);
     el.health.classList.toggle('mid', hp > 30 && hp <= 60);
-    el.med.innerHTML = `<b>${keyLabel(g.settings.keys.heal[0])}</b> ✚ ${p.medkits}`;
-    el.nade.innerHTML = `<b>${keyLabel(g.settings.keys.grenade[0])}</b> ● ${p.grenades}`;
+    const K = g.settings.keys;
+    el.med.style.display = el.nade.style.display = veh ? 'none' : '';
+    el.smk.style.display = veh || p.smokes + (CLASSES[p.cls]?.smokes ?? 0) === 0 ? 'none' : '';
+    el.med.innerHTML = `<b>${keyLabel(K.heal[0])}</b> ✚ ${p.medkits}`;
+    el.nade.innerHTML = `<b>${keyLabel(K.grenade[0])}</b> ● ${p.frags}`;
+    el.smk.innerHTML = `<b>${keyLabel(K.smoke[0])}</b> ☁ ${p.smokes}`;
     el.med.classList.toggle('empty', p.medkits <= 0);
-    el.nade.classList.toggle('empty', p.grenades <= 0);
+    el.nade.classList.toggle('empty', p.frags <= 0);
+    el.smk.classList.toggle('empty', p.smokes <= 0);
 
     // ammo
-    const w = p.weapon;
+    const w = veh ? null : p.weapon;
+    if (veh) this._vehicleHud(veh);
+    else {
+      el.vcross.style.display = el.pip.style.display = el.bomb.style.display = el.vstats.style.display = 'none';
+      el.warn.textContent = '';
+    }
     if (w) {
       el.wname.textContent = w.def.name;
-      if (w.def.mag > 0) {
+      if (w.def.throwable || w.def.placeable) {
+        el.mag.textContent = w.ammo + w.reserve;
+        el.res.textContent = w.def.cls === 'c4' ? `· ${g.combat.countOwned(p, 'c4')} placed · aim to detonate` : `· ${g.combat.countOwned(p, 'mine')} placed`;
+        el.mag.classList.toggle('low', w.ammo + w.reserve === 0);
+      } else if (w.def.mag > 0) {
         el.mag.textContent = w.ammo;
         el.res.textContent = `/ ${w.reserve}`;
         el.mag.classList.toggle('low', w.ammo <= Math.ceil(w.def.mag * 0.25));
@@ -310,7 +343,7 @@ export class Hud {
     const scoped = w && w.def.scope && ads > 0.92;
     el.scope.style.display = scoped ? 'block' : 'none';
     const c = g.settings.crosshair;
-    const showCross = p.alive && ads < 0.55 && !(w && w.def.scope) && p.healT < 0 && p.throwT < 0 && !p.sprinting;
+    const showCross = p.alive && !veh && ads < 0.55 && !(w && w.def.scope) && p.healT < 0 && p.throwT < 0 && !p.sprinting;
     el.cross.style.display = showCross || (w && w.def.scope && ads < 0.4 && p.alive) ? 'block' : 'none';
     if (w) {
       const inacc = w.inaccuracy(p) + (w.def.pellets ? w.def.pelletSpread : 0);
@@ -377,6 +410,74 @@ export class Hud {
 
     this._radar(p);
     if (g.settings.showFps) el.fps.textContent = `${g.fps} FPS`;
+    if (g.menu) g.menu.tick();
+  }
+
+  // Screen position of a world point, or null if it's behind the camera.
+  _toScreen(v) {
+    proj.copy(v).project(this.g.camera);
+    if (proj.z > 1) return null;
+    return [(proj.x * 0.5 + 0.5) * this.w, (-proj.y * 0.5 + 0.5) * this.h];
+  }
+
+  _place(el, p) {
+    if (!p) {
+      el.style.display = 'none';
+      return;
+    }
+    el.style.display = 'block';
+    el.style.transform = `translate(${p[0]}px, ${p[1]}px)`;
+  }
+
+  _vehicleHud(v) {
+    const g = this.g;
+    const el = this.el;
+    el.vcross.style.display = 'block';
+    el.vcross.className = v.kind + (v.zoom ? ' zoom' : '');
+    el.vstats.style.display = 'block';
+    let warn = '';
+    if (v.kind === 'tank') {
+      // where the barrel is actually pointing
+      const m = v.muzzleWorld(new THREE.Vector3());
+      const d = v.gunDir(new THREE.Vector3());
+      const dist = Math.max(20, v.aimPoint.distanceTo(m));
+      this._place(el.pip, this._toScreen(m.addScaledVector(d, dist)));
+      el.pip.className = 'tank';
+      el.bomb.style.display = 'none';
+      const rl = v.reload > 0;
+      el.wname.textContent = v.weapon === 0 ? '120 mm CANNON' : 'COAX MG';
+      if (v.weapon === 0) {
+        el.mag.textContent = rl ? v.reload.toFixed(1) : 'READY';
+        el.res.textContent = '';
+      } else {
+        el.mag.textContent = v.mgLocked > 0 ? 'HOT' : `${Math.round(v.mgHeat * 100)}%`;
+        el.res.textContent = 'heat';
+      }
+      el.mag.classList.toggle('low', v.weapon === 0 ? rl : v.mgLocked > 0);
+      el.reload.style.display = rl ? 'block' : 'none';
+      if (rl) el.reloadBar.style.width = `${(1 - v.reload / TANK.reload) * 100}%`;
+      const hullRel = Math.round((((v.turretYaw / DEG) % 360) + 360) % 360);
+      el.vstats.innerHTML = `<div class="tank-ico" style="--turret:${-v.turretYaw}rad"><i class="hull"></i><i class="tur"></i></div><div>${Math.round(Math.abs(v.speed) * 3.6)} km/h</div><div class="dim">turret ${hullRel}°</div>`;
+      if (v.mgLocked > 0 && v.weapon === 1) warn = 'MG OVERHEATED';
+    } else {
+      const F = new THREE.Vector3(0, 0, -1).applyQuaternion(v.quat);
+      this._place(el.pip, this._toScreen(v.pos.clone().addScaledVector(F, 400)));
+      el.pip.className = 'jet';
+      if (v.secondary === 1 && v.bombs > 0) {
+        this._place(el.bomb, this._toScreen(v.predictBomb(new THREE.Vector3())));
+      } else el.bomb.style.display = 'none';
+      el.wname.textContent = v.secondary === 0 ? 'ROCKETS' : 'BOMBS';
+      el.mag.textContent = v.secondary === 0 ? v.rockets : v.bombs;
+      el.res.textContent = v.heatLock > 0 ? '· CANNON HOT' : `· cannon ${Math.round(v.heat * 100)}%`;
+      el.mag.classList.toggle('low', (v.secondary === 0 ? v.rockets : v.bombs) === 0);
+      el.reload.style.display = 'none';
+      el.vstats.innerHTML = `<div><b>${Math.round(v.speed * 3.6)}</b> km/h</div><div><b>${Math.round(v.pos.y)}</b> m</div><div class="thr"><i style="height:${Math.round(v.throttle * 100)}%"></i></div><div class="dim">${v.boost ? 'AFTERBURNER' : `throttle ${Math.round(v.throttle * 100)}%`}</div>`;
+      if (v.returning) warn = 'RETURN TO THE BATTLEFIELD';
+      else if (v.pos.y + v.vel.y * 2.5 < 25 && v.vel.y < 0) warn = 'PULL UP';
+      else if (v.speed < 46) warn = 'STALL';
+    }
+    if (el.warn.textContent !== warn) el.warn.textContent = warn;
+    void g;
   }
 
   _drawDamage(dt, p) {
@@ -399,7 +500,8 @@ export class Hud {
     }
     // nearby grenade
     let warn = false;
-    for (const n of this.g.combat.grenades) {
+    for (const n of this.g.combat.projectiles) {
+      if (n.type !== 'frag' || p.vehicle) continue;
       const dist = Math.hypot(n.pos.x - p.pos.x, n.pos.z - p.pos.z);
       if (dist > 9 || !p.alive) continue;
       warn = true;
@@ -432,7 +534,7 @@ export class Hud {
     const W = 200;
     const g = this.g;
     const { minX, minZ } = g.map.bounds;
-    const zoom = 1.0;
+    const zoom = p.vehicle ? (p.vehicle.kind === 'jet' ? 0.2 : 0.55) : 1.0;
     const S = this.rScale * zoom;
     ctx.clearRect(0, 0, W, W);
     ctx.save();
@@ -444,9 +546,38 @@ export class Hud {
     ctx.translate(W / 2, W / 2);
     ctx.rotate(p.yaw);
     ctx.drawImage(this.radarMap, -(p.pos.x - minX) * S, -(p.pos.z - minZ) * S, this.radarMap.width * zoom, this.radarMap.height * zoom);
+    // tanks and jets
+    for (const v of g.vehicles) {
+      if (!v.alive || v.driver === p) continue;
+      const ally = v.team === p.team;
+      if (!ally && !(v.driver && g.isSpotted(v.driver, p.team))) continue;
+      const x = (v.pos.x - p.pos.x) * S;
+      const z = (v.pos.z - p.pos.z) * S;
+      ctx.save();
+      ctx.translate(x, z);
+      ctx.fillStyle = ally ? TEAMS[v.team].color : '#ff3a30';
+      ctx.strokeStyle = '#000';
+      ctx.lineWidth = 1.5;
+      if (v.kind === 'tank') {
+        ctx.rotate(-v.yaw);
+        ctx.fillRect(-5, -7, 10, 14);
+        ctx.strokeRect(-5, -7, 10, 14);
+      } else {
+        const F = new THREE.Vector3(0, 0, -1).applyQuaternion(v.quat);
+        ctx.rotate(Math.atan2(F.x, -F.z));
+        ctx.beginPath();
+        ctx.moveTo(0, -8);
+        ctx.lineTo(7, 6);
+        ctx.lineTo(-7, 6);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
     // other players
     for (const a of g.actors) {
-      if (a === p || !a.alive) continue;
+      if (a === p || !a.alive || a.vehicle) continue;
       const ally = a.team === p.team;
       if (!ally && !g.isSpotted(a, p.team)) continue;
       const x = (a.pos.x - p.pos.x) * S;
@@ -511,7 +642,7 @@ export class Hud {
         best = zn;
       }
     }
-    const name = best ? best.name + (p.pos.y > 2 ? ' · Upstairs' : '') : '';
+    const name = best ? best.name + (p.pos.y > 2 && !p.vehicle ? ' · Upstairs' : '') : p.vehicle ? 'Over the Downs' : '';
     if (this.el.loc.textContent !== name) this.el.loc.textContent = name;
   }
 }

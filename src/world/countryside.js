@@ -5,7 +5,7 @@
 
 import * as THREE from 'three';
 import { Frame } from './builder.js';
-import { terraceHouse, pub, hall, building, furn, table } from './buildings.js';
+import { terraceHouse, pub, hall, building, furn } from './buildings.js';
 import * as P from './props.js';
 import { mulberry32 } from '../util.js';
 import { signTexture } from './textures.js';
@@ -380,9 +380,10 @@ function depot(B, team, zone) {
     }
   }
   // flag pole in team colours
-  B.cylinder(-160, 0, -6, 0.08, 9, 'metal', { tint: 0xd8d8d8, segments: 6, collide: true });
+  // (behind the tank spawns so it never blocks the way out)
+  B.cylinder(-186, 0, -10, 0.08, 9, 'metal', { tint: 0xd8d8d8, segments: 6, collide: true });
   const flag = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 1.4), new THREE.MeshLambertMaterial({ color: T.hex, side: THREE.DoubleSide }));
-  B.mesh(flag, -158.8, 8.2, -6, 0);
+  B.mesh(flag, -184.8, 8.2, -10, 0);
   for (const [x, z] of [[-196, -26], [-195.2, -26.4], [-196, 26], [-152, -26], [-152.6, -26.6]]) P.barrel(B, x, z);
 }
 

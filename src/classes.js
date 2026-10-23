@@ -65,8 +65,8 @@ export const SECONDARY_CHOICES = ['hipower', 'webley'];
 
 // How many of each vehicle a team may have at once.
 export function vehicleLimit(kind, teamSize) {
-  if (kind === 'tank') return teamSize >= 6 ? 2 : 1;
-  if (kind === 'jet') return teamSize >= 8 ? 2 : 1;
+  if (kind === 'tank') return teamSize >= 8 ? 2 : 1;
+  if (kind === 'jet') return teamSize >= 11 ? 2 : 1;
   return 99;
 }
 

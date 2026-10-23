@@ -96,7 +96,7 @@ export class Pickups {
       it.mesh.position.y = it.pos.y + 0.45 + Math.sin(it.phase * 2) * 0.07;
       it.mesh.rotation.y += dt * 1.4;
       for (const a of g.actors) {
-        if (!a.alive) continue;
+        if (!a.alive || a.vehicle) continue;
         const dx = a.pos.x - it.pos.x;
         const dz = a.pos.z - it.pos.z;
         if (dx * dx + dz * dz > 1.1 || Math.abs(a.pos.y - it.pos.y) > 1.2) continue;
@@ -105,15 +105,15 @@ export class Pickups {
           a.health = Math.min(MAX_HEALTH, a.health + HEAL);
         } else {
           let took = false;
-          for (const s of ['primary', 'secondary']) {
+          for (const s of ['primary', 'secondary', 'gadget', 'gadget2']) {
             const w = a.weapons[s];
             if (w && w.reserve < w.def.reserve) {
               w.reserve = w.def.reserve;
               took = true;
             }
           }
-          if (a.grenades < 1) {
-            a.grenades = 1;
+          if (a.frags < 1) {
+            a.frags = 1;
             took = true;
           }
           if (!took) continue;

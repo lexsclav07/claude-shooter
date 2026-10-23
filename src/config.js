@@ -25,9 +25,10 @@ export const PHYS = {
 };
 
 export const MATCH_DEFAULTS = {
-  teamSize: 5,
-  scoreLimit: 40,
-  timeLimit: 10, // minutes, 0 = unlimited
+  teamSize: 8,
+  scoreLimit: 60,
+  timeLimit: 15, // minutes, 0 = unlimited
+  vehicles: true,
   enemyDifficulty: 'normal',
   allyDifficulty: 'normal',
   friendlyFire: false,
@@ -43,10 +44,8 @@ export const TEAMS = [
 export const RESPAWN_TIME = 3.5;
 export const SPAWN_PROTECT = 2.5;
 export const MAX_HEALTH = 100;
-export const MEDKITS_PER_LIFE = 2;
 export const MEDKIT_HEAL = 50;
 export const MEDKIT_TIME = 2.2;
-export const GRENADES_PER_LIFE = 1;
 
 // Bot difficulty presets. Tweak these to taste.
 //   reaction      seconds from first sighting to first shot

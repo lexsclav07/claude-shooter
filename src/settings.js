@@ -18,7 +18,10 @@ export const ACTIONS = [
   ['secondary', 'Pistol'],
   ['melee', 'Knife'],
   ['lastWeapon', 'Last weapon'],
-  ['grenade', 'Throw grenade'],
+  ['gadget', 'Class gadget 1'],
+  ['gadget2', 'Class gadget 2'],
+  ['grenade', 'Throw frag grenade'],
+  ['smoke', 'Throw smoke grenade'],
   ['heal', 'Use medkit'],
   ['inspect', 'Inspect weapon'],
   ['scoreboard', 'Scoreboard'],
@@ -41,8 +44,11 @@ export const DEFAULT_KEYS = {
   secondary: ['Digit2'],
   melee: ['Digit3'],
   lastWeapon: ['KeyX'],
-  grenade: ['KeyG', 'Digit5'],
-  heal: ['KeyH', 'Digit4'],
+  gadget: ['Digit4'],
+  gadget2: ['Digit5'],
+  grenade: ['KeyG'],
+  smoke: ['KeyT'],
+  heal: ['KeyH'],
   inspect: ['KeyF'],
   scoreboard: ['Tab'],
   loadout: ['KeyB'],
@@ -65,8 +71,9 @@ export const DEFAULT_SETTINGS = {
   crosshair: { color: '#4dff6a', size: 7, gap: 4, thickness: 2, dot: false, dynamic: true, outline: true },
   keys: DEFAULT_KEYS,
   match: { ...MATCH_DEFAULTS },
-  loadout: { primary: 'ak47', secondary: 'hipower' },
+  loadout: { cls: 'rifleman', primary: 'ak47', secondary: 'hipower' },
   playerName: 'You',
+  version: 2,
 };
 
 const KEY = 'clawd-strike-settings-v1';
@@ -83,6 +90,12 @@ export function loadSettings() {
     if (!(k in s)) continue;
     if (v && typeof v === 'object' && !Array.isArray(v)) Object.assign(s[k], v);
     else s[k] = v;
+  }
+  // version 1 bound 4 and 5 to medkit / grenade; those are class gadgets now
+  if ((saved.version ?? 1) < 2) {
+    s.keys = structuredClone(DEFAULT_KEYS);
+    s.match = { ...MATCH_DEFAULTS, enemyDifficulty: s.match.enemyDifficulty, allyDifficulty: s.match.allyDifficulty };
+    s.version = 2;
   }
   return s;
 }

@@ -12,6 +12,8 @@ const GUNS = {
   revolver: { lp: 3000, decay: 0.22, thump: 95, tg: 0.9, crack: 0.5, tail: 0.6, gain: 1.0 },
   shotgun: { lp: 2500, decay: 0.28, thump: 72, tg: 1.1, crack: 0.4, tail: 0.7, gain: 1.1 },
   sniper: { lp: 2900, decay: 0.42, thump: 58, tg: 1.2, crack: 0.9, tail: 1.1, gain: 1.25 },
+  tankmg: { lp: 3800, decay: 0.1, thump: 120, tg: 0.6, crack: 0.4, tail: 0.4, gain: 0.85 },
+  jetcannon: { lp: 2600, decay: 0.07, thump: 80, tg: 0.9, crack: 0.3, tail: 0.25, gain: 0.9 },
 };
 
 export class GameAudio {
@@ -166,7 +168,7 @@ export class GameAudio {
     const p = opts.pitch ?? 1;
     if (GUNS[name]) return this._gun(GUNS[name], t, opts);
     const ref = { step: 3, land: 3 }[name] ?? 6;
-    const range = { step: 32, land: 30, bounce: 30, click: 15, reload: 18, glass: 70, explosion: 260, whiz: 10, knife: 15, knifeHit: 20, knifeWall: 20 }[name];
+    const range = { step: 32, land: 30, bounce: 30, click: 15, reload: 18, glass: 70, explosion: 300, bigExplosion: 500, cannon: 450, rocketLaunch: 200, smash: 90, smashMetal: 120, smokePop: 60, whiz: 10, knife: 15, knifeHit: 20, knifeWall: 20, bombWhistle: 220, jetPass: 500, clank: 40 }[name];
     const dest = this._out({ ...opts, range: opts.range ?? range }, ref);
     if (!dest) return;
     switch (name) {
@@ -281,6 +283,64 @@ export class GameAudio {
       case 'beep':
         this._tone(t, dest, { freq: 1200, dur: 0.07, gain: 0.12, type: 'square' });
         break;
+      case 'bigExplosion':
+        this._noise(t, dest, { dur: 2.6, freq: 1400, sweepTo: 90, gain: 1.8, decay: 2.6, brown: true });
+        this._noise(t, dest, { dur: 0.35, freq: 3500, gain: 1.0, decay: 0.35 });
+        this._tone(t, dest, { freq: 48, to: 20, dur: 1.6, gain: 1.6 });
+        this._noise(t + 0.25, dest, { dur: 1.8, freq: 500, gain: 0.5, attack: 0.1, decay: 1.8, brown: true });
+        break;
+      case 'cannon':
+        this._noise(t, dest, { dur: 0.9, freq: 2200, sweepTo: 200, gain: 1.6, decay: 0.9, brown: true });
+        this._noise(t, dest, { dur: 0.05, type: 'highpass', freq: 2500, gain: 1.0, decay: 0.05 });
+        this._tone(t, dest, { freq: 70, to: 30, dur: 0.6, gain: 1.4 });
+        this._noise(t + 0.08, dest, { dur: 1.6, freq: 700, gain: 0.35, attack: 0.05, decay: 1.6, brown: true });
+        break;
+      case 'rocketLaunch':
+        this._noise(t, dest, { dur: 0.25, freq: 2000, gain: 1.1, decay: 0.25 });
+        this._tone(t, dest, { freq: 110, to: 40, dur: 0.3, gain: 0.9 });
+        this._noise(t + 0.05, dest, { dur: 0.9, type: 'bandpass', freq: 1400, q: 0.8, gain: 0.6, decay: 0.9, sweepTo: 600 });
+        break;
+      case 'jetRocket':
+        this._noise(t, dest, { dur: 0.5, type: 'bandpass', freq: 1700, q: 0.9, gain: 0.7, decay: 0.5, sweepTo: 700 });
+        this._tone(t, dest, { freq: 160, to: 60, dur: 0.15, gain: 0.5 });
+        break;
+      case 'bombDrop':
+        this._noise(t, dest, { dur: 0.08, type: 'bandpass', freq: 900, q: 2, gain: 0.5, decay: 0.08 });
+        this._tone(t, dest, { freq: 300, to: 160, dur: 0.12, gain: 0.25, type: 'triangle' });
+        break;
+      case 'bombWhistle':
+        this._tone(t, dest, { freq: 1500, to: 380, dur: 1.6, gain: 0.18, attack: 0.2 });
+        break;
+      case 'smash':
+        this._noise(t, dest, { dur: 0.3, type: 'bandpass', freq: 700, q: 0.9, gain: 0.9, decay: 0.3 });
+        for (let i = 0; i < 4; i++) this._noise(t + 0.04 + Math.random() * 0.2, dest, { dur: 0.06, type: 'bandpass', freq: 400 + Math.random() * 900, q: 2, gain: 0.5, decay: 0.07 });
+        this._tone(t, dest, { freq: 120, to: 55, dur: 0.18, gain: 0.5 });
+        break;
+      case 'smashMetal':
+        this._noise(t, dest, { dur: 0.35, type: 'bandpass', freq: 1500, q: 1.2, gain: 0.9, decay: 0.35 });
+        for (let i = 0; i < 3; i++) this._tone(t + Math.random() * 0.15, dest, { freq: 600 + Math.random() * 900, dur: 0.35, gain: 0.08, type: 'triangle' });
+        this._tone(t, dest, { freq: 90, to: 40, dur: 0.25, gain: 0.6 });
+        break;
+      case 'clank':
+        this._tone(t, dest, { freq: 420, dur: 0.15, gain: 0.2, type: 'triangle' });
+        this._noise(t, dest, { dur: 0.08, type: 'bandpass', freq: 1200, q: 2, gain: 0.5, decay: 0.08 });
+        this._noise(t + 0.12, dest, { dur: 0.06, type: 'bandpass', freq: 900, q: 2, gain: 0.5, decay: 0.06 });
+        break;
+      case 'smokePop':
+        this._noise(t, dest, { dur: 0.1, freq: 1200, gain: 0.6, decay: 0.1 });
+        this._noise(t + 0.05, dest, { dur: 2.2, type: 'bandpass', freq: 2600, q: 0.6, gain: 0.25, attack: 0.1, decay: 2.2 });
+        break;
+      case 'warn':
+        this._tone(t, dest, { freq: 880, dur: 0.12, gain: 0.12, type: 'square' });
+        this._tone(t + 0.16, dest, { freq: 880, dur: 0.12, gain: 0.12, type: 'square' });
+        break;
+      case 'lockOn':
+        this._tone(t, dest, { freq: 1600, dur: 0.05, gain: 0.08, type: 'square' });
+        break;
+      case 'vehicleHit':
+        this._tone(t, dest, { freq: 260, to: 120, dur: 0.12, gain: 0.35, type: 'triangle' });
+        this._noise(t, dest, { dur: 0.06, type: 'bandpass', freq: 1800, q: 2, gain: 0.4, decay: 0.06 });
+        break;
       default:
         break;
     }
@@ -299,6 +359,103 @@ export class GameAudio {
     this._tone(t, dest, { freq: g.thump * p, to: g.thump * 0.4, dur: 0.12, gain: g.tg, type: 'sine' });
     // echoey tail, more noticeable at range
     this._noise(t + 0.02, dest, { dur: g.tail, freq: 900, gain: 0.18 + far * 0.25, attack: 0.03, decay: g.tail, brown: true });
+  }
+
+  // Looping engine noise for a vehicle. kind: 'tank' | 'jet'. Call update() every
+  // frame with the vehicle position (null = the listener is inside it) and 0..1 load.
+  engine(kind) {
+    if (!this.ctx) return null;
+    const c = this.ctx;
+    const out = c.createGain();
+    out.gain.value = 0;
+    const lp = c.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = 6000;
+    const pan = c.createStereoPanner();
+    out.connect(lp);
+    lp.connect(pan);
+    pan.connect(this.sfx);
+    const nodes = [];
+    const noise = (buf, type, freq, q, gain) => {
+      const src = c.createBufferSource();
+      src.buffer = buf;
+      src.loop = true;
+      const f = c.createBiquadFilter();
+      f.type = type;
+      f.frequency.value = freq;
+      f.Q.value = q;
+      const g = c.createGain();
+      g.gain.value = gain;
+      src.connect(f);
+      f.connect(g);
+      g.connect(out);
+      src.start(0, Math.random() * 1.5);
+      nodes.push(src);
+      return { f, g };
+    };
+    const osc = (type, freq, gain) => {
+      const o = c.createOscillator();
+      o.type = type;
+      o.frequency.value = freq;
+      const g = c.createGain();
+      g.gain.value = gain;
+      o.connect(g);
+      g.connect(out);
+      o.start();
+      nodes.push(o);
+      return { o, g };
+    };
+    const parts = {};
+    if (kind === 'tank') {
+      parts.rumble = noise(this.brown, 'lowpass', 180, 0.9, 1.4);
+      parts.growl = osc('sawtooth', 32, 0.12);
+      parts.tracks = noise(this.white, 'bandpass', 900, 1.5, 0.0);
+    } else {
+      parts.roar = noise(this.white, 'bandpass', 900, 0.6, 0.5);
+      parts.low = noise(this.brown, 'lowpass', 260, 0.7, 1.2);
+      parts.whine = osc('sine', 2400, 0.012);
+    }
+    const self = this;
+    return {
+      update(pos, load, speed = 0, volume = 1) {
+        const L = self.listener;
+        let vol = volume;
+        let cut = 12000;
+        let p = 0;
+        if (pos) {
+          const dx = pos.x - L.x;
+          const dy = pos.y - L.y;
+          const dz = pos.z - L.z;
+          const dist = Math.hypot(dx, dy, dz);
+          const range = kind === 'jet' ? 900 : 220;
+          const ref = kind === 'jet' ? 40 : 12;
+          vol *= dist > range ? 0 : (ref / (ref + Math.max(0, dist - ref))) * (1 - dist / range);
+          cut = 12000 - Math.min(1, dist / 200) * 10000;
+          p = dist > 0.5 ? clamp((dx * -L.fz + dz * L.fx) / dist, -1, 1) * 0.8 : 0;
+        } else vol *= 0.55;
+        const now = c.currentTime;
+        out.gain.setTargetAtTime(vol * (kind === 'jet' ? 0.5 : 0.6), now, 0.08);
+        lp.frequency.setTargetAtTime(cut, now, 0.1);
+        pan.pan.setTargetAtTime(p, now, 0.1);
+        if (kind === 'tank') {
+          parts.rumble.f.frequency.setTargetAtTime(140 + load * 220, now, 0.15);
+          parts.growl.o.frequency.setTargetAtTime(28 + load * 34, now, 0.15);
+          parts.growl.g.gain.setTargetAtTime(0.08 + load * 0.1, now, 0.15);
+          parts.tracks.g.gain.setTargetAtTime(Math.min(1, speed / 8) * 0.35, now, 0.1);
+          parts.tracks.f.frequency.setTargetAtTime(600 + speed * 60, now, 0.1);
+        } else {
+          parts.roar.f.frequency.setTargetAtTime(600 + load * 1400, now, 0.2);
+          parts.roar.g.gain.setTargetAtTime(0.35 + load * 0.5, now, 0.2);
+          parts.whine.o.frequency.setTargetAtTime(2000 + load * 1800, now, 0.3);
+        }
+      },
+      stop() {
+        const now = c.currentTime;
+        out.gain.setTargetAtTime(0, now, 0.1);
+        for (const n of nodes) n.stop(now + 0.5);
+        setTimeout(() => out.disconnect(), 800);
+      },
+    };
   }
 
   // Wind and the occasional bird.

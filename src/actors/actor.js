@@ -1,13 +1,16 @@
 // State shared by the player and bots: body, view, health, inventory, stats.
 
 import * as THREE from 'three';
-import { PHYS, MAX_HEALTH, MEDKITS_PER_LIFE, GRENADES_PER_LIFE } from '../config.js';
+import { PHYS, MAX_HEALTH } from '../config.js';
+import { CLASSES } from '../classes.js';
 import { WeaponState } from '../weapons/weapon.js';
 import { moveBody, bodyFits } from '../physics.js';
 import { clamp, approach, lerp, dirFromAngles } from '../util.js';
 import { Mascot } from './mascot.js';
 
 let nextId = 1;
+
+export const SLOT_ORDER = ['primary', 'secondary', 'melee', 'gadget', 'gadget2'];
 
 export class Actor {
   constructor({ name, team, isPlayer = false }) {
@@ -36,14 +39,18 @@ export class Actor {
     this.respawnAt = 0;
     this.diedAt = 0;
     this.spawnProtect = 0;
-    this.weapons = { primary: null, secondary: null, melee: null };
+    this.weapons = { primary: null, secondary: null, melee: null, gadget: null, gadget2: null };
     this.slot = 'primary';
     this.lastSlot = 'secondary';
     this.switchT = 0;
-    this.grenades = GRENADES_PER_LIFE;
-    this.medkits = MEDKITS_PER_LIFE;
+    this.cls = 'rifleman';
+    this.frags = 1;
+    this.smokes = 0;
+    this.medkits = 2;
     this.healT = -1;
     this.throwT = -1;
+    this.throwType = 'frag';
+    this.vehicle = null; // the tank or jet this actor is driving / flying
     this.kills = 0;
     this.deaths = 0;
     this.assists = 0;
@@ -55,7 +62,7 @@ export class Actor {
     this.lastShotTime = -10;
     this.stride = 0;
     this.airTime = 0;
-    this.loadout = { primary: 'ak47', secondary: 'hipower' };
+    this.loadout = { cls: 'rifleman', primary: 'ak47', secondary: 'hipower' };
     // movement intent, written by the player controller or bot brain
     this.input = { x: 0, z: 0, jump: false, crouch: false, sprint: false, walk: false, lean: 0, ads: false };
     this.model = new Mascot(team, name);
@@ -87,12 +94,23 @@ export class Actor {
     return dirFromAngles(this.yaw + this.recoilYaw, this.pitch + this.recoilPitch, out);
   }
 
-  giveLoadout() {
-    this.weapons.primary = new WeaponState(this.loadout.primary);
-    this.weapons.secondary = new WeaponState(this.loadout.secondary);
+  // Total grenades of both kinds (used by pickups and the HUD).
+  get grenades() {
+    return this.frags + this.smokes;
+  }
+
+  giveLoadout(cls = this.loadout.cls) {
+    const c = CLASSES[cls] && !CLASSES[cls].vehicle ? CLASSES[cls] : CLASSES.rifleman;
+    this.cls = CLASSES[cls] ? cls : 'rifleman';
+    const primary = c.primaries.includes(this.loadout.primary) ? this.loadout.primary : c.primaries[0];
+    this.weapons.primary = new WeaponState(primary);
+    this.weapons.secondary = new WeaponState(this.loadout.secondary || 'hipower');
     this.weapons.melee = new WeaponState('knife');
-    this.grenades = GRENADES_PER_LIFE;
-    this.medkits = MEDKITS_PER_LIFE;
+    this.weapons.gadget = c.gadget ? new WeaponState(c.gadget) : null;
+    this.weapons.gadget2 = c.gadget2 ? new WeaponState(c.gadget2) : null;
+    this.frags = c.frags;
+    this.smokes = c.smokes;
+    this.medkits = c.medkits;
     this.slot = 'primary';
     this.lastSlot = 'secondary';
     this.switchT = this.weapon.def.draw * 0.6;
@@ -111,7 +129,7 @@ export class Actor {
     return true;
   }
 
-  spawn(p, yaw) {
+  spawn(p, yaw, cls) {
     this.pos.set(p[0], p[1] + 0.05, p[2]);
     this.vel.set(0, 0, 0);
     this.yaw = yaw;
@@ -131,7 +149,8 @@ export class Actor {
     this.throwT = -1;
     this.damageLog.clear();
     this.streak = 0;
-    this.giveLoadout();
+    this.vehicle = null;
+    this.giveLoadout(cls);
   }
 
   // Integrates movement from this.input. Returns events: { landed, footstep, jumped }.

@@ -2,7 +2,6 @@
 
 import * as THREE from 'three';
 import { bulletHoleTexture, radialTexture, flashTexture } from '../world/textures.js';
-import { buildGun } from '../weapons/models.js';
 
 const MAX_P = 1200;
 const MAX_DECALS = 320;
@@ -16,6 +15,15 @@ const IMPACT_COLORS = {
   foliage: [0x4a7a30, 0x6a9a40, 0x3a5a22],
   none: [0xffffff],
 };
+const DEBRIS_COLORS = {
+  wood: [0x8a6440, 0xa07850, 0x5a4028, 0xc8a070],
+  foliage: [0x3a6a28, 0x4a7a30, 0x5a8a38, 0x2a4a1a],
+  metal: [0x5a5e62, 0x3a3c40, 0x7a7e84, 0x2a2a2c],
+  stone: [0x8a867c, 0xa8a49a, 0x6a665e, 0x4a4844],
+  hay: [0xd8b860, 0xc8a048, 0xe8d080, 0xa08038],
+  glass: [0xd8eef8, 0xb8d8e8, 0xffffff],
+};
+const SMOKE_PUFFS = 90;
 
 export class Effects {
   constructor(scene) {
@@ -72,13 +80,25 @@ export class Effects {
     this.flashTex = flashTexture();
     this.smokeTex = radialTexture('rgba(200,200,200,0.8)', 'rgba(200,200,200,0)');
     this.sprites = [];
-    for (let i = 0; i < 40; i++) {
+    for (let i = 0; i < 140; i++) {
       const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.smokeTex, transparent: true, depthWrite: false }));
       s.visible = false;
       scene.add(s);
       this.sprites.push({ s, t: 0, max: 0, grow: 0, vel: new THREE.Vector3(), fade: 1, active: false });
     }
-    this.grenadePool = [];
+    this.spriteIdx = 0;
+    // smoke-grenade clouds: big, slow, long-lived puffs from their own pool
+    this.cloudTex = radialTexture('rgba(235,235,232,1)', 'rgba(235,235,232,0)');
+    this.clouds = [];
+    for (let i = 0; i < SMOKE_PUFFS; i++) {
+      const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.cloudTex, transparent: true, depthWrite: false, color: 0xdcdcd8 }));
+      s.visible = false;
+      s.renderOrder = 2;
+      scene.add(s);
+      this.clouds.push({ s, t: 0, life: 0, size: 0, base: new THREE.Vector3(), drift: new THREE.Vector3(), active: false });
+    }
+    // burning wrecks: emitters that keep releasing dark puffs
+    this.columns = [];
     this._q = new THREE.Quaternion();
     this._m = new THREE.Matrix4();
     this._v = new THREE.Vector3();
@@ -164,21 +184,33 @@ export class Effects {
     void p;
   }
 
-  puff(p, normal, size, life, color) {
-    const sp = this.sprites.find((s) => !s.active);
+  _sprite() {
+    const n = this.sprites.length;
+    for (let k = 0; k < n; k++) {
+      const sp = this.sprites[(this.spriteIdx + k) % n];
+      if (!sp.active) {
+        this.spriteIdx = (this.spriteIdx + k + 1) % n;
+        return sp;
+      }
+    }
+    return null;
+  }
+
+  puff(p, normal, size, life, color, opacity = 0.7) {
+    const sp = this._sprite();
     if (!sp) return;
     sp.active = true;
     sp.s.visible = true;
     sp.s.material.map = this.smokeTex;
     sp.s.material.color.set(color);
     sp.s.material.blending = THREE.NormalBlending;
-    sp.s.material.opacity = 0.7;
+    sp.s.material.opacity = opacity;
     sp.s.position.copy(p);
     sp.s.scale.setScalar(size);
     sp.t = 0;
     sp.max = life;
     sp.grow = size * 2.2;
-    sp.fade = 0.7;
+    sp.fade = opacity;
     sp.vel.set(normal[0] * 0.6, normal[1] * 0.6 + 0.3, normal[2] * 0.6);
   }
 
@@ -204,10 +236,12 @@ export class Effects {
     l.peak = intensity;
   }
 
-  explosion(p) {
-    this.flashLight(p, 60, 0.25, 0xffb050, 20);
-    for (let i = 0; i < 2; i++) {
-      const sp = this.sprites.find((s) => !s.active);
+  // scale 1 is a frag grenade; tank shells ~0.7, bombs ~1.5
+  explosion(p, scale = 1) {
+    const k = Math.max(0.4, scale);
+    this.flashLight(p, 60 * Math.min(2, k), 0.25 + 0.1 * k, 0xffb050, 20 * Math.min(2.5, k));
+    for (let i = 0; i < 2 + (k > 1.2 ? 1 : 0); i++) {
+      const sp = this._sprite();
       if (!sp) break;
       sp.active = true;
       sp.s.visible = true;
@@ -215,45 +249,97 @@ export class Effects {
       sp.s.material.color.set(0xffffff);
       sp.s.material.blending = THREE.AdditiveBlending;
       sp.s.material.opacity = 1;
-      sp.s.position.copy(p).y += 0.4;
-      sp.s.scale.setScalar(2);
+      sp.s.position.copy(p).y += 0.4 * k;
+      sp.s.scale.setScalar(2 * k);
       sp.t = 0;
-      sp.max = 0.18;
-      sp.grow = 8;
+      sp.max = 0.18 + 0.06 * k;
+      sp.grow = 8 * k;
       sp.fade = 1;
       sp.vel.set(0, 0, 0);
     }
-    for (let i = 0; i < 9; i++) {
+    const n = Math.round(9 * Math.min(2, k));
+    for (let i = 0; i < n; i++) {
       const a = Math.random() * Math.PI * 2;
       const q = p.clone();
-      q.x += Math.cos(a) * 0.8;
-      q.z += Math.sin(a) * 0.8;
-      q.y += 0.3 + Math.random();
-      this.puff(q, [Math.cos(a), 0.6, Math.sin(a)], 1.4, 1.8 + Math.random(), 0x5a5652);
+      q.x += Math.cos(a) * 0.8 * k;
+      q.z += Math.sin(a) * 0.8 * k;
+      q.y += (0.3 + Math.random()) * k;
+      this.puff(q, [Math.cos(a) * k, 0.6 * k, Math.sin(a) * k], 1.4 * k, 1.8 + Math.random() * (1 + k * 0.5), 0x5a5652);
     }
-    this.burst(p, 40, [0, 1, 0], 4, 9, 0.8, 0.06, [0xffc060, 0xff8030, 0xfff0c0], 10);
-    this.burst(p, 25, [0, 1, 0], 3, 6, 1.4, 0.08, [0x3a3530, 0x5a5048], 9);
-    this.decal(new THREE.Vector3(p.x, Math.max(0.01, p.y - 0.05), p.z), [0, 1, 0], 2.2);
+    this.burst(p, 40 * Math.min(2, k), [0, 1, 0], 4 * k, 9 * k, 0.8, 0.06 * Math.sqrt(k), [0xffc060, 0xff8030, 0xfff0c0], 10);
+    this.burst(p, 25 * Math.min(2, k), [0, 1, 0], 3 * k, 6 * k, 1.4, 0.08 * Math.sqrt(k), [0x3a3530, 0x5a5048], 9);
+    if (p.y < 40) this.decal(new THREE.Vector3(p.x, Math.max(0.01, p.y - 0.05), p.z), [0, 1, 0], 2.2 * k);
   }
 
-  grenadeMesh() {
-    let m = this.grenadePool.pop();
-    if (!m) {
-      m = buildGun('grenade').group;
-      m.scale.setScalar(1.4);
-      m.traverse((o) => {
-        if (o.isMesh) o.castShadow = true;
-      });
-    }
-    m.visible = true;
-    this.scene.add(m);
-    return m;
+  // Metal sparks (bullets on armour, vehicles scraping walls).
+  sparks(p, n = 10) {
+    this.burst(p, n, [0, 0.6, 0], 3, 5, 0.3, 0.03, IMPACT_COLORS.metal, 12);
   }
 
-  releaseGrenade(m) {
-    m.visible = false;
-    this.scene.remove(m);
-    this.grenadePool.push(m);
+  // Rocket exhaust / shell wake: called every few centimetres of flight.
+  trail(p, type) {
+    if (type === 'rocket') {
+      this.puff(p, [0, 0.1, 0], 0.35, 1.1 + Math.random() * 0.5, 0xb8b4ae, 0.55);
+      this.emit(p.x, p.y, p.z, (Math.random() - 0.5) * 0.6, (Math.random() - 0.5) * 0.6, (Math.random() - 0.5) * 0.6, 0.12, 0.09, 0xffc060, 0);
+    } else {
+      this.puff(p, [0, 0.05, 0], 0.18, 0.45, 0xd8d4cc, 0.35);
+    }
+  }
+
+  // Broken props: chunks flying out of a box-shaped volume.
+  debris(c, size, type = 'wood') {
+    const colors = DEBRIS_COLORS[type] || DEBRIS_COLORS.wood;
+    const vol = Math.max(0.2, size[0] * size[1] * size[2]);
+    const n = Math.min(60, Math.ceil(10 + vol * 6));
+    const big = type === 'metal' || type === 'stone' ? 0.11 : 0.09;
+    for (let k = 0; k < n * this.quality; k++) {
+      const x = c.x + (Math.random() - 0.5) * size[0];
+      const y = c.y + (Math.random() - 0.5) * size[1];
+      const z = c.z + (Math.random() - 0.5) * size[2];
+      const sp = type === 'foliage' || type === 'hay' ? 2.2 : 3.5;
+      this.emit(x, y, z, (Math.random() - 0.5) * sp * 2, Math.random() * sp + 1, (Math.random() - 0.5) * sp * 2, 1.1 + Math.random() * 1.2, big * (0.5 + Math.random()), colors[(Math.random() * colors.length) | 0], type === 'foliage' || type === 'hay' ? 4 : 11);
+    }
+    const dust = type === 'foliage' ? 0x6a8a48 : type === 'hay' ? 0xd8c890 : type === 'metal' ? 0x6a6a6a : 0xa89a88;
+    const puffs = Math.min(6, 1 + Math.round(vol));
+    for (let k = 0; k < puffs; k++) {
+      const q = new THREE.Vector3(c.x + (Math.random() - 0.5) * size[0], c.y, c.z + (Math.random() - 0.5) * size[2]);
+      this.puff(q, [(Math.random() - 0.5) * 2, 0.5, (Math.random() - 0.5) * 2], 0.6 + Math.min(1.5, size[1] * 0.4), 1.2 + Math.random(), dust, 0.6);
+    }
+  }
+
+  // Smoke grenade: a thick white cloud that builds up, lingers, then thins out.
+  smokeCloud(pos, life = 16) {
+    let n = 0;
+    for (const c of this.clouds) {
+      if (c.active) continue;
+      c.active = true;
+      c.s.visible = true;
+      c.t = -n * 0.07;
+      c.life = life + Math.random() * 2;
+      c.size = 3 + Math.random() * 2.5;
+      const a = Math.random() * Math.PI * 2;
+      const r = Math.sqrt(Math.random()) * 4.2;
+      c.base.set(pos.x + Math.cos(a) * r, pos.y + 0.6 + Math.random() * 2.6, pos.z + Math.sin(a) * r);
+      c.drift.set((Math.random() - 0.5) * 0.25, 0.05 + Math.random() * 0.08, (Math.random() - 0.5) * 0.25);
+      c.s.position.copy(pos);
+      c.s.scale.setScalar(0.1);
+      c.s.material.opacity = 0;
+      c.origin = pos.clone();
+      if (++n >= 26) break;
+    }
+  }
+
+  clearSmoke() {
+    for (const c of this.clouds) {
+      c.active = false;
+      c.s.visible = false;
+    }
+    this.columns.length = 0;
+  }
+
+  // Dark smoke rising from a wreck for `life` seconds.
+  smokeColumn(pos, life = 25, size = 1) {
+    this.columns.push({ pos: pos.clone(), t: 0, life, next: 0, size });
   }
 
   update(dt) {
@@ -341,6 +427,42 @@ export class Effects {
       const sc = sp.s.scale.x + sp.grow * dt;
       sp.s.scale.setScalar(sc);
       sp.s.material.opacity = sp.fade * (1 - k);
+    }
+
+    for (const c of this.clouds) {
+      if (!c.active) continue;
+      c.t += dt;
+      if (c.t < 0) continue;
+      const grow = Math.min(1, c.t / 1.8);
+      const e = 1 - (1 - grow) * (1 - grow);
+      c.s.position.lerpVectors(c.origin, c.base, e).addScaledVector(c.drift, c.t);
+      c.s.scale.setScalar(c.size * (0.3 + 0.7 * e) * (1 + c.t * 0.012));
+      const fadeOut = c.t > c.life ? 1 - (c.t - c.life) / 3 : 1;
+      if (fadeOut <= 0) {
+        c.active = false;
+        c.s.visible = false;
+        continue;
+      }
+      c.s.material.opacity = 0.92 * Math.min(1, c.t * 2) * fadeOut;
+    }
+
+    for (let j = this.columns.length - 1; j >= 0; j--) {
+      const col = this.columns[j];
+      col.t += dt;
+      if (col.t > col.life) {
+        this.columns.splice(j, 1);
+        continue;
+      }
+      col.next -= dt;
+      if (col.next <= 0) {
+        const fade = 1 - col.t / col.life;
+        col.next = 0.22 + (1 - fade) * 0.4;
+        const q = this._v.copy(col.pos);
+        q.x += (Math.random() - 0.5) * 0.6 * col.size;
+        q.z += (Math.random() - 0.5) * 0.6 * col.size;
+        this.puff(q, [0.15, 1.6, 0.05], 0.8 * col.size, 3.2, 0x2e2c2a, 0.55 * fade + 0.15);
+        if (col.t < col.life * 0.4 && Math.random() < 0.5) this.emit(q.x, q.y, q.z, (Math.random() - 0.5), 1.5 + Math.random(), (Math.random() - 0.5), 0.5, 0.06, 0xff9030, -1);
+      }
     }
   }
 }

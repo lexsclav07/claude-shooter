@@ -3,6 +3,8 @@
 
 import * as THREE from 'three';
 import { MEDKIT_HEAL, MEDKIT_TIME, MAX_HEALTH } from '../config.js';
+import { PROJECTILES } from '../combat.js';
+import { SLOT_ORDER } from './actor.js';
 import { DEG, clamp, approach } from '../util.js';
 
 const tmpO = new THREE.Vector3();
@@ -13,7 +15,7 @@ const tmpM = new THREE.Vector3();
 const UP = new THREE.Vector3(0, 1, 0);
 
 export function makeCommand() {
-  return { fire: false, firePressed: false, ads: false, reload: false, slot: null, grenade: false, heal: false };
+  return { fire: false, firePressed: false, ads: false, adsPressed: false, reload: false, slot: null, grenade: false, smoke: false, heal: false, detonate: false };
 }
 
 function spreadDir(base, angle, out) {
@@ -42,7 +44,7 @@ export function updateActions(game, a, cmd, dt) {
   a.spawnProtect = Math.max(0, a.spawnProtect - dt);
   a.sprintOut = a.sprinting ? 0.14 : Math.max(0, (a.sprintOut ?? 0) - dt);
 
-  for (const slot of ['primary', 'secondary', 'melee']) {
+  for (const slot of SLOT_ORDER) {
     const ws = a.weapons[slot];
     if (!ws) continue;
     const ev = ws.update(slot === a.slot ? dt : 0);
@@ -80,23 +82,30 @@ export function updateActions(game, a, cmd, dt) {
     game.audio.play('heal', { pos: sndPos });
   }
 
-  // grenade throw
+  // grenade throw (frag or smoke)
   if (a.throwT >= 0) {
     const prev = a.throwT;
     a.throwT += dt;
     if (prev < 0.32 && a.throwT >= 0.32) {
-      game.combat.throwGrenade(a, cmd.throwScale ?? 1);
-      a.grenades--;
+      game.combat.throw(a, a.throwType, cmd.throwScale ?? 1);
+      if (a.throwType === 'smoke') a.smokes--;
+      else a.frags--;
     }
     if (a.throwT >= 0.6) {
       a.throwT = -1;
       a.switchT = w ? w.def.draw * 0.5 : 0;
     }
-  } else if (cmd.grenade && a.grenades > 0 && a.healT < 0) {
+  } else if (((cmd.grenade && a.frags > 0) || (cmd.smoke && a.smokes > 0)) && a.healT < 0) {
+    a.throwType = cmd.grenade && a.frags > 0 ? 'frag' : 'smoke';
     a.throwT = 0;
     if (w) w.cancelReload();
     a.adsT = 0;
     game.audio.play('pin', { pos: sndPos });
+  }
+
+  // C4: aim (or the bot's detonate command) sets off every charge you have out
+  if ((cmd.detonate || (cmd.adsPressed && w && w.def.cls === 'c4')) && a.weapons.gadget && a.weapons.gadget.def.cls === 'c4') {
+    game.combat.detonate(a);
   }
 
   const busy = a.healT >= 0 || a.throwT >= 0;
@@ -110,7 +119,7 @@ export function updateActions(game, a, cmd, dt) {
   const def = w.def;
 
   // aim down sights
-  const canAds = !busy && !a.sprinting && a.switchT <= 0 && w.reloadT <= 0 && a.slideT <= 0 && w.boltT <= 0;
+  const canAds = !busy && !a.sprinting && a.switchT <= 0 && w.reloadT <= 0 && a.slideT <= 0 && w.boltT <= 0 && def.cls !== 'c4' && def.cls !== 'mine';
   const target = cmd.ads && canAds ? 1 : 0;
   a.adsT = approach(a.adsT, target, dt / def.adsTime);
 
@@ -127,10 +136,13 @@ export function updateActions(game, a, cmd, dt) {
     if (def.shellReload && cmd.firePressed && w.ammo > 0) w.cancelReload();
     else return;
   }
+  // charges and mines come out of the bag one at a time
+  if ((def.throwable || def.placeable) && w.ammo <= 0 && w.reserve > 0 && w.cooldown <= 0 && w.startReload()) return;
   if (w.cooldown > 0 || w.boltT > 0) return;
   const wants = def.auto ? cmd.fire : cmd.firePressed;
   if (!wants) return;
   if (def.mag > 0 && w.ammo <= 0) {
+    if (def.throwable || def.placeable) return;
     if (cmd.firePressed) game.audio.play('click', { pos: sndPos });
     if (w.reserve > 0 && w.startReload()) game.audio.play('magOut', { pos: sndPos });
     return;
@@ -152,6 +164,47 @@ export function shoot(game, a, w) {
     game.later(0.12, () => {
       if (a.alive) game.combat.melee(a, def);
     });
+    return;
+  }
+  if (def.throwable) {
+    game.combat.throw(a, def.throwable, 1);
+    w.onFired();
+    if (isPlayer) game.viewmodel.swing();
+    game.audio.play('pin', { pos: isPlayer ? undefined : a.pos });
+    return;
+  }
+  if (def.placeable) {
+    if (!a.grounded || !game.combat.placeMine(a)) return;
+    w.onFired();
+    if (isPlayer) game.viewmodel.swing();
+    return;
+  }
+  if (def.projectile) {
+    const pd = PROJECTILES[def.projectile];
+    const o = a.eye(tmpO).clone();
+    const dir = spreadDir(a.aimDir(tmpD).clone(), w.inaccuracy(a) * DEG, new THREE.Vector3());
+    // launched from the shoulder, slightly right of the eye
+    o.x += Math.cos(a.yaw) * 0.12;
+    o.z -= Math.sin(a.yaw) * 0.12;
+    o.addScaledVector(dir, 0.7);
+    game.combat.spawnProjectile(def.projectile, a, o, dir.clone().multiplyScalar(pd.speed), { ignore: a });
+    // back-blast
+    const back = o.clone().addScaledVector(dir, -1.8);
+    game.fx.puff(back, [-dir.x * 3, 0.4, -dir.z * 3], 0.9, 1.4, 0xb8b4ae);
+    game.fx.puff(back, [-dir.x * 2, 0.2, -dir.z * 2], 0.7, 1.1, 0xa8a49e);
+    w.onFired();
+    const [up, side] = w.kick();
+    a.recoilPitch = clamp(a.recoilPitch + up * DEG, -0.6, 0.6);
+    a.recoilYaw = clamp(a.recoilYaw + side * DEG, -0.4, 0.4);
+    a.adsT = Math.min(a.adsT, 0.5);
+    game.audio.play(def.sound, { pos: isPlayer ? undefined : a.pos });
+    game.fx.flashLight(o, 8, 0.1);
+    if (isPlayer) {
+      game.viewmodel.fire(def);
+      game.shake(0.3);
+    } else a.model.muzzleFlash();
+    game.emitNoise(o, 90, a, 'shot');
+    game.onShot(a);
     return;
   }
   const origin = a.eye(tmpO);

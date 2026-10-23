@@ -1,6 +1,7 @@
 // Turns keyboard/mouse into actor intent + weapon commands, and drives the camera.
 
 import { makeCommand, updateActions } from './actions.js';
+import { SLOT_ORDER } from './actor.js';
 import { PHYS } from '../config.js';
 import { clamp, damp, lerp, DEG } from '../util.js';
 
@@ -33,6 +34,14 @@ export class PlayerController {
     this.mouse.y = m.y;
     if (!a.alive) {
       inp.takeWheel();
+      return;
+    }
+    if (a.vehicle) {
+      a.vehicle.control(g, inp, dt, m);
+      if (frozen) {
+        a.vehicle.input.fire = false;
+        a.vehicle.input.mg = false;
+      }
       return;
     }
 
@@ -83,18 +92,18 @@ export class PlayerController {
     if (a.sprinting && cmd.ads) a.input.sprint = false;
     cmd.reload = inp.hit('reload');
     cmd.slot = null;
-    if (inp.hit('primary')) cmd.slot = 'primary';
-    if (inp.hit('secondary')) cmd.slot = 'secondary';
-    if (inp.hit('melee')) cmd.slot = 'melee';
+    for (const sl of SLOT_ORDER) if (inp.hit(sl) && a.weapons[sl]) cmd.slot = sl;
     if (inp.hit('lastWeapon')) cmd.slot = a.lastSlot;
     const wheel = inp.takeWheel();
     if (wheel !== 0) {
-      const order = ['primary', 'secondary', 'melee'];
+      const order = SLOT_ORDER.filter((sl) => a.weapons[sl]);
       const i = order.indexOf(a.slot);
-      cmd.slot = order[(i + (wheel > 0 ? 1 : -1) + 3) % 3];
+      cmd.slot = order[(i + (wheel > 0 ? 1 : -1) + order.length) % order.length];
     }
     if (cmd.slot) this.adsToggled = false;
+    cmd.adsPressed = !frozen && inp.mouseHit(2);
     cmd.grenade = !frozen && inp.hit('grenade');
+    cmd.smoke = !frozen && inp.hit('smoke');
     cmd.heal = inp.hit('heal');
     if (inp.hit('inspect')) g.viewmodel.inspect();
     if (frozen) {

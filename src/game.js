@@ -18,9 +18,13 @@ import { BotBrain, randomLoadout } from './actors/bot.js';
 import { PlayerController } from './actors/player.js';
 import { Hud } from './ui/hud.js';
 import { Destruction } from './world/destruction.js';
-import { WEAPONS } from './weapons/defs.js';
+import { WEAPONS, VEHICLE_KILL_NAMES } from './weapons/defs.js';
+import { CLASSES, vehicleLimit } from './classes.js';
+import { Tank } from './vehicles/tank.js';
+import { Jet } from './vehicles/jet.js';
+import { TankNav, TankBrain, JetBrain } from './vehicles/ai.js';
 import { BOT_NAMES, MAX_HEALTH, RESPAWN_TIME, SPAWN_PROTECT, PHYS } from './config.js';
-import { damp } from './util.js';
+import { damp, pick } from './util.js';
 
 const tmp = new THREE.Vector3();
 
@@ -86,8 +90,8 @@ export class Game {
       if (!fine.some((o) => r.minX < o.maxX && r.maxX > o.minX && r.minZ < o.maxZ && r.maxZ > o.minZ)) fine.push(r);
     }
     this.navStats = this.nav.build(this.builder, seeds, fine);
+    this.tankNav = new TankNav(this.world, this.map.bounds);
     this.loadMs = Math.round(performance.now() - t0);
-    this.glassBackup = null;
 
     this.fx = new Effects(scene);
     this.audio = new GameAudio();
@@ -100,7 +104,9 @@ export class Game {
     this.hud = new Hud(this);
 
     this.actors = [];
+    this.vehicles = [];
     this.player = null;
+    this.deployRequested = false;
     this.time = 0;
     this.timers = [];
     this.state = 'menu';
@@ -189,7 +195,7 @@ export class Game {
     const pTeam = ms.playerTeam === 'auto' || ms.playerTeam === undefined ? (Math.random() < 0.5 ? 0 : 1) : ms.playerTeam;
     this.match.playerTeam = pTeam;
     const player = new Actor({ name: this.settings.playerName || 'You', team: pTeam, isPlayer: true });
-    player.loadout = { ...this.settings.loadout };
+    player.loadout = { cls: 'rifleman', ...this.settings.loadout };
     this.player = player;
     this.actors.push(player);
     for (let team = 0; team < 2; team++) {
@@ -201,6 +207,7 @@ export class Game {
         this.actors.push(a);
       }
     }
+    this.deployRequested = false;
     for (const a of this.actors) {
       this.scene.add(a.model.root);
       a.model.marker.visible = !a.isPlayer && a.team === pTeam;
@@ -219,8 +226,9 @@ export class Game {
 
   clearMatch() {
     for (const a of this.actors) this.scene.remove(a.model.root);
-    for (const n of this.combat.grenades) this.fx.releaseGrenade(n.mesh);
-    this.combat.grenades.length = 0;
+    for (const v of this.vehicles) v.dispose();
+    this.vehicles = [];
+    this.combat.reset();
     this.actors = [];
     this.player = null;
     this.timers = [];
@@ -280,14 +288,65 @@ export class Game {
     return best;
   }
 
+  // Is there a free tank / jet for this team? `asker` is the actor who wants it.
+  vehicleFree(team, kind, asker = null) {
+    if (!this.match || !this.match.vehicles) return false;
+    let used = 0;
+    for (const v of this.vehicles) if (v.alive && v.team === team && v.kind === kind) used++;
+    // the player gets first dibs: bots leave a vehicle the (dead) player has picked
+    const p = this.player;
+    if (asker && asker !== p && p && p.team === team && !p.alive && CLASSES[(this.pendingLoadout || p.loadout).cls]?.vehicle === kind) used++;
+    return used < vehicleLimit(kind, this.match.teamSize);
+  }
+
+  vehicleCount(team, kind) {
+    let n = 0;
+    for (const v of this.vehicles) if (v.alive && v.team === team && v.kind === kind) n++;
+    return n;
+  }
+
+  _botClass(a) {
+    let enemyTanks = 0;
+    for (const v of this.vehicles) if (v.alive && v.kind === 'tank' && v.team !== a.team) enemyTanks++;
+    const opts = [
+      ['rifleman', 30],
+      ['engineer', 16 + Math.min(2, enemyTanks) * 12],
+      ['recon', 14],
+      ['medic', 14],
+    ];
+    if (this.vehicleFree(a.team, 'tank', a)) opts.push(['tanker', 18]);
+    if (this.vehicleFree(a.team, 'jet', a)) opts.push(['pilot', 14]);
+    let r = Math.random() * opts.reduce((t, o) => t + o[1], 0);
+    for (const [c, w] of opts) {
+      r -= w;
+      if (r <= 0) return c;
+    }
+    return 'rifleman';
+  }
+
   respawn(a, initial = false) {
     if (a.isPlayer && this.pendingLoadout) {
       a.loadout = { ...this.pendingLoadout };
       this.pendingLoadout = null;
     }
-    if (a.bot && !initial && Math.random() < 0.3) a.loadout = randomLoadout();
+    if (a.bot && !a.isPlayer) {
+      const cls = this._botClass(a);
+      const c = CLASSES[cls];
+      const lo = randomLoadout();
+      a.loadout = { cls, primary: c.primaries && !c.primaries.includes(lo.primary) ? pick(c.primaries) : lo.primary, secondary: lo.secondary };
+    }
+    if (a.isPlayer) this.deployRequested = false;
+    // vehicle classes start in their tank / jet at the team depot
+    let cls = a.loadout.cls || 'rifleman';
+    const vkind = CLASSES[cls]?.vehicle;
+    if (vkind && !this.vehicleFree(a.team, vkind)) {
+      cls = 'rifleman';
+      if (a.isPlayer) this.hud.toast(`No ${vkind === 'tank' ? 'tank' : 'jet'} free - deployed as Rifleman`, '#ffd060');
+    }
     const s = this.chooseSpawn(a.team);
-    a.spawn(s.pos, s.yaw + (Math.random() - 0.5) * 0.3);
+    a.spawn(s.pos, s.yaw + (Math.random() - 0.5) * 0.3, CLASSES[cls].vehicle ? 'rifleman' : cls);
+    a.cls = cls;
+    if (CLASSES[cls].vehicle) this.spawnVehicle(CLASSES[cls].vehicle, a);
     // nudge out of anything we spawned inside
     for (let k = 0; k < 8 && !bodyFits(this.world, a.pos, a.height); k++) {
       a.pos.x += (Math.random() - 0.5) * 1.2;
@@ -302,16 +361,99 @@ export class Game {
       this.playerCtl.reset();
       this.hud.onRespawn();
       this.audio.play('spawn');
+      this.emit('deployed');
     } else {
-      a.model.root.visible = true;
+      a.model.root.visible = !a.vehicle;
     }
+    void initial;
+  }
+
+  spawnVehicle(kind, driver) {
+    const pts = this.map.vehicleSpawns[driver.team][kind];
+    // the spawn point furthest from any other vehicle
+    let best = pts[0];
+    let bestD = -1;
+    for (const p of pts) {
+      let d = Infinity;
+      for (const v of this.vehicles) d = Math.min(d, Math.hypot(v.pos.x - p.pos[0], v.pos.z - p.pos[2]));
+      if (d > bestD) {
+        bestD = d;
+        best = p;
+      }
+    }
+    const v = kind === 'tank' ? new Tank(this, driver.team, best.pos, best.yaw) : new Jet(this, driver.team, best.pos, best.yaw);
+    v.driver = driver;
+    v.protect = 3;
+    driver.vehicle = v;
+    driver.pos.copy(v.pos);
+    driver.model.root.visible = false;
+    this.scene.add(v.mesh);
+    this.vehicles.push(v);
+    if (driver.bot) driver.bot.vehicleBrain = kind === 'tank' ? new TankBrain(this, driver, v) : new JetBrain(this, driver, v);
+    return v;
+  }
+
+  damageVehicle(v, amount, attacker, weaponId, from) {
+    if (!v.alive || !this.match || this.match.over) return;
+    if (v.protect > 0) return;
+    const ff = attacker && v.driver && attacker.team === v.team && attacker !== v.driver;
+    if (ff && !this.match.friendlyFire) return;
+    if (attacker && attacker === v.driver && weaponId !== 'crash') return;
+    amount = Math.max(1, Math.round(amount));
+    v.hp -= amount;
+    v.lastHit = this.time;
+    if (attacker && attacker !== v.driver) {
+      v.lastAttacker = attacker;
+      v.lastWeapon = weaponId;
+      attacker.damageDealt += amount;
+    }
+    if (v.driver && v.driver.bot) v.driver.bot.onDamaged(attacker);
+    if (v.driver === this.player) {
+      this.hud.damageFrom(from);
+      this.audio.play('vehicleHit');
+      this.shake(Math.min(0.6, amount / 300));
+    }
+    const kill = v.hp <= 0;
+    if (attacker === this.player && attacker !== v.driver) {
+      this.hud.hitmarker(kill ? 'kill' : 'hit');
+      if (amount > 30 || kill) this.audio.play(kill ? 'kill' : 'hit');
+    }
+    if (kill) this.destroyVehicle(v, attacker, weaponId);
+  }
+
+  destroyVehicle(v, killer, weaponId) {
+    if (!v.alive) return;
+    v.hp = 0;
+    // a crash after being shot up counts for whoever did the shooting
+    if (!killer && v.lastAttacker && this.time - v.lastHit < 10) {
+      killer = v.lastAttacker;
+      weaponId = weaponId === 'crash' ? 'crash' : v.lastWeapon;
+    }
+    v.onDestroyed();
+    const p = v.pos.clone();
+    if (v.kind === 'tank') p.y += 1.4;
+    this.fx.explosion(p, v.kind === 'tank' ? 1.6 : 1.4);
+    this.audio.play('bigExplosion', { pos: p });
+    this.combat.explode(p, killer, { radius: 8, damage: 90, vehicle: 120, prop: 300, weapon: 'vehicle', skip: v, silent: true });
+    const d = v.driver;
+    v.driver = null;
+    v.removeAt = this.time + (v.kind === 'tank' ? 25 : 15);
+    if (d && d.alive) {
+      d.vehicle = null;
+      this.kill(d, killer || d, weaponId, 'body', p);
+    }
+  }
+
+  // Called from the deploy screen.
+  deploy() {
+    this.deployRequested = true;
   }
 
   // ------------------------------------------------------------------ combat events
 
   damage(target, amount, attacker, weaponId, zone, from) {
     if (!target.alive || !this.match || this.match.over) return;
-    if (target.spawnProtect > 0) return;
+    if (target.spawnProtect > 0 || target.vehicle) return;
     const ff = attacker && attacker !== target && attacker.team === target.team;
     if (ff && !this.match.friendlyFire) return;
     amount = Math.max(1, Math.round(amount));
@@ -353,6 +495,14 @@ export class Game {
     victim.throwT = -1;
     victim.vel.set(0, 0, 0);
     victim.killedBy = killer;
+    victim.deathVehicle = null;
+    if (victim.vehicle) {
+      const v = victim.vehicle;
+      victim.vehicle = null;
+      victim.deathVehicle = v;
+      if (v.alive) this.destroyVehicle(v, killer, weaponId);
+    }
+    if (victim.bot) victim.bot.vehicleBrain = null;
     // fall away from the shot
     if (from) {
       const fx = -Math.sin(victim.yaw);
@@ -379,10 +529,17 @@ export class Game {
     for (const rec of victim.damageLog.values()) {
       if (rec.actor !== killer && rec.dmg >= 40 && this.time - rec.t < 10 && rec.actor.team !== victim.team) rec.actor.assists++;
     }
-    const wname = weaponId === 'grenade' ? 'Grenade' : WEAPONS[weaponId]?.name ?? weaponId;
+    const wname = VEHICLE_KILL_NAMES[weaponId] ?? WEAPONS[weaponId]?.name ?? weaponId;
     this.hud.killfeed(killer, victim, wname, headshot);
     if (killer === this.player && victim !== this.player) this.hud.onKill(victim, headshot, killer.streak);
-    if (victim === this.player) this.hud.onDeath(killer, wname, headshot);
+    if (victim === this.player) {
+      this.lastDeathWeapon = wname;
+      this.hud.onDeath(killer, wname, headshot);
+      // open the deploy screen after a moment of death cam
+      this.later(1.4, () => {
+        if (this.player === victim && !victim.alive && this.match && !this.match.over && !victim.bot) this.emit('deployScreen');
+      });
+    }
     this.emitNoise(victim.pos, 8, victim, 'death');
     this.checkWin();
   }
@@ -512,8 +669,13 @@ export class Game {
     for (const a of this.actors) {
       if (!a.alive) {
         if (this.time >= a.respawnAt && !m.over) {
-          if (!a.isPlayer || !this.hud.loadoutOpen) this.respawn(a);
+          if (!a.isPlayer || a.bot || this.deployRequested) this.respawn(a);
         }
+        continue;
+      }
+      if (a.vehicle) {
+        a.spawnProtect = Math.max(0, a.spawnProtect - dt);
+        if (a.bot && a.bot.vehicleBrain && !m.over) a.bot.vehicleBrain.update(dt, frozen);
         continue;
       }
       if (a.bot) {
@@ -540,10 +702,54 @@ export class Game {
       // fell out of the world somehow
       if (a.pos.y < -5) this.respawn(a);
     }
+    this.updateVehicles(dt);
     this.separateActors();
-    this.combat.updateGrenades(dt);
+    this.combat.update(dt);
     this.pickups.update(dt);
     this.fx.update(dt);
+  }
+
+  updateVehicles(dt) {
+    const V = this.vehicles;
+    for (let i = V.length - 1; i >= 0; i--) {
+      const v = V[i];
+      v.protect = Math.max(0, (v.protect ?? 0) - dt);
+      v.update(dt);
+      if (!v.alive && this.time > v.removeAt) {
+        v.dispose();
+        V.splice(i, 1);
+      }
+    }
+    // tanks shove each other apart (two circles along each hull)
+    for (let i = 0; i < V.length; i++) {
+      const a = V[i];
+      if (a.kind !== 'tank') continue;
+      for (let j = i + 1; j < V.length; j++) {
+        const b = V[j];
+        if (b.kind !== 'tank') continue;
+        if (Math.abs(a.pos.x - b.pos.x) > 9 || Math.abs(a.pos.z - b.pos.z) > 9) continue;
+        const fa = a.forwardDir.clone();
+        const fb = b.forwardDir.clone();
+        for (const sa of [-1.9, 1.9]) {
+          for (const sb of [-1.9, 1.9]) {
+            const dx = b.pos.x + fb.x * sb - (a.pos.x + fa.x * sa);
+            const dz = b.pos.z + fb.z * sb - (a.pos.z + fa.z * sa);
+            const d = Math.hypot(dx, dz) || 0.01;
+            const o = 3.7 - d;
+            if (o <= 0) continue;
+            const wa = a.alive ? 0.5 : 0;
+            const wb = b.alive ? 0.5 : 0;
+            const tot = wa + wb || 1;
+            a.pos.x -= (dx / d) * o * (wa / tot);
+            a.pos.z -= (dz / d) * o * (wa / tot);
+            b.pos.x += (dx / d) * o * (wb / tot);
+            b.pos.z += (dz / d) * o * (wb / tot);
+            if (a.alive) a.speed *= 0.9;
+            if (b.alive) b.speed *= 0.9;
+          }
+        }
+      }
+    }
   }
 
   separateActors() {
@@ -551,10 +757,10 @@ export class Game {
     const minD = PHYS.radius * 2 * 0.95;
     for (let i = 0; i < A.length; i++) {
       const a = A[i];
-      if (!a.alive) continue;
+      if (!a.alive || a.vehicle) continue;
       for (let j = i + 1; j < A.length; j++) {
         const b = A[j];
-        if (!b.alive) continue;
+        if (!b.alive || b.vehicle) continue;
         const dx = b.pos.x - a.pos.x;
         const dz = b.pos.z - a.pos.z;
         if (Math.abs(dx) > minD || Math.abs(dz) > minD) continue;
@@ -599,22 +805,28 @@ export class Game {
         cam.fov = 60;
         cam.updateProjectionMatrix();
       }
+    } else if (p.alive && p.vehicle) {
+      p.vehicle.updateCamera(cam, dt, this);
     } else if (p.alive) {
       this.playerCtl.updateCamera(cam, dt);
     } else {
-      // death cam: orbit the body and look at whoever got you
+      // death cam: orbit the body (or the burning wreck) and look at whoever got you
       const t = this.time - p.diedAt;
       const k = p.killedBy && p.killedBy !== p && p.killedBy.alive ? p.killedBy : null;
+      const wreck = p.deathVehicle;
+      const c = wreck ? wreck.pos : p.pos;
+      const R = wreck ? (wreck.kind === 'jet' ? 22 : 13) : 3.2;
+      const H = wreck ? 6 : 2.4;
       const ang = p.yaw + Math.PI + t * 0.25;
-      const want = tmp.set(p.pos.x + Math.sin(ang) * 3.2, p.pos.y + 2.4, p.pos.z + Math.cos(ang) * 3.2);
+      const want = tmp.set(c.x + Math.sin(ang) * R, Math.max(0.5, c.y + H), c.z + Math.cos(ang) * R);
       // keep the camera out of walls
-      const dir = want.clone().sub(p.pos).setY(0);
+      const dir = want.clone().sub(c).setY(0);
       const len = dir.length();
       dir.normalize();
-      const hit = this.world.raycast(p.pos.x, p.pos.y + 2.2, p.pos.z, dir.x, 0, dir.z, len, 'move');
-      if (hit) want.set(p.pos.x + dir.x * (hit.t - 0.3), p.pos.y + 2.2, p.pos.z + dir.z * (hit.t - 0.3));
-      cam.position.lerp(want, damp(4, dt));
-      const look = k ? new THREE.Vector3(k.pos.x, k.pos.y + 1, k.pos.z) : new THREE.Vector3(p.pos.x, p.pos.y + 0.4, p.pos.z);
+      const hit = this.world.raycast(c.x, c.y + H - 0.2, c.z, dir.x, 0, dir.z, len, 'move');
+      if (hit) want.set(c.x + dir.x * (hit.t - 0.3), c.y + H - 0.2, c.z + dir.z * (hit.t - 0.3));
+      cam.position.lerp(want, damp(wreck ? 6 : 4, dt));
+      const look = k ? new THREE.Vector3(k.pos.x, k.pos.y + 1, k.pos.z) : new THREE.Vector3(c.x, c.y + 0.4, c.z);
       const m = new THREE.Matrix4().lookAt(cam.position, look, new THREE.Vector3(0, 1, 0));
       const q = new THREE.Quaternion().setFromRotationMatrix(m);
       cam.quaternion.slerp(q, damp(3, dt));
@@ -639,13 +851,15 @@ export class Game {
     focus.z = Math.round(focus.z / step) * step;
     this.sun.target.position.set(focus.x, 0, focus.z);
     this.sun.position.set(focus.x, 0, focus.z).add(this.sunOffset);
-    for (const a of this.actors) a.model.update(dt * (this.state === 'playing' ? this.slowmo : 1), a);
-    this.audio.setListener(cam.position, p && p.alive ? p.yaw : Math.atan2(-cam.getWorldDirection(tmp).x, -tmp.z));
+    for (const a of this.actors) if (!a.vehicle) a.model.update(dt * (this.state === 'playing' ? this.slowmo : 1), a);
+    this.audio.setListener(cam.position, Math.atan2(-cam.getWorldDirection(tmp).x, -tmp.z));
+    if (this.state === 'playing') for (const v of this.vehicles) v.updateSound(this.audio, p && v.driver === p);
+    else for (const v of this.vehicles) if (v.engine) v.engine.update(null, 0, 0, 0);
 
     const r = this.renderer;
     r.clear();
     r.render(this.scene, cam);
-    if (p && p.alive && this.state !== 'menu') {
+    if (p && p.alive && !p.vehicle && this.state !== 'menu') {
       this.viewmodel.update(dt, {
         actor: p,
         weapon: p.weapon,
@@ -654,6 +868,7 @@ export class Game {
         roll: cam.rotation.z,
         healProgress: p.healT,
         throwProgress: p.throwT >= 0 ? p.throwT / 0.6 : -1,
+        throwType: p.throwType,
       });
       this.viewmodel.render(r);
     }
